@@ -92,7 +92,7 @@ set -u
 set -o pipefail
 
 # non-target languages: cantonese bengali pashto turkish vietnamese haitian tamil kurmanji tokpisin georgian
-train_set=tr_babel10
+train_set=tr_babel10_2500spk
 train_dev=dt_babel10
 # non-target
 recog_set="dt_babel_cantonese et_babel_cantonese dt_babel_bengali et_babel_bengali dt_babel_pashto et_babel_pashto dt_babel_turkish et_babel_turkish\
@@ -168,6 +168,13 @@ if [ ${stage} -le 1 ]; then
     utils/combine_data.sh data/${train_set}_org data/tr_babel_cantonese data/tr_babel_bengali data/tr_babel_pashto data/tr_babel_turkish data/tr_babel_vietnamese data/tr_babel_haitian data/tr_babel_tamil data/tr_babel_kurmanji data/tr_babel_tokpisin data/tr_babel_georgian
     utils/combine_data.sh data/${train_dev}_org data/dt_babel_cantonese data/dt_babel_bengali data/dt_babel_pashto data/dt_babel_turkish data/dt_babel_vietnamese data/dt_babel_haitian data/dt_babel_tamil data/dt_babel_kurmanji data/dt_babel_tokpisin data/dt_babel_georgian
 
+    # create a trainng subset with 2500 speakers (in total 7470)
+    s2u=data/${train_set}_org/spk2utt
+    subset_scp.pl 2500 data/${train_set}_org/spk2utt > data/${train_set}_org/spk2utt_tmp
+    utils/spk2utt_to_utt2spk.pl data/${train_set}_org/spk2utt_tmp > data/${train_set}_org/utt2spk
+    utils/fix_data_dir.sh data/${train_set}_org
+    rm data/${train_set}_org/spk2utt_tmp
+
     # remove utt having more than 3000 frames or less than 10 frames or
     # remove utt having more than 400 characters or no more than 0 characters
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_org data/${train_set}
@@ -188,9 +195,9 @@ if [ ${stage} -le 1 ]; then
         ${feat_dt_dir}/storage
     fi
     [ ! -d ${feat_tr_dir}/feats.scp ] && dump.sh --cmd "$train_cmd" --nj 40 --do_delta $do_delta \
-        data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
+        data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train_${train_set} ${feat_tr_dir}
     [ ! -d ${feat_dt_dir}/feats.scp ] && dump.sh --cmd "$train_cmd" --nj 40 --do_delta $do_delta \
-        data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
+        data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev_${train_dev} ${feat_dt_dir}
 fi
 dict=data/lang_1char/train_units.txt
 nlsyms=data/lang_1char/non_lang_syms.txt
