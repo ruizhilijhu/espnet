@@ -202,3 +202,27 @@ def load_labeldict(dict_file):
     if '<eos>' not in labeldict:
         labeldict['<eos>'] = len(labeldict)
     return labeldict
+
+
+
+def sgd_lr_decay(lr_decay):
+    '''Extension to perform sgd lr decay'''
+    @training.make_extension(trigger=(1, 'epoch'))
+    def sgd_lr_decay(trainer):
+        _sgd_lr_decay(trainer, lr_decay)
+
+    return sgd_lr_decay
+
+
+def _sgd_lr_decay(trainer, lr_decay):
+    optimizer = trainer.updater.get_optimizer('main')
+    # for chainer
+    if hasattr(optimizer, 'eps'):
+        current_lr = optimizer.lr
+        setattr(optimizer, 'lr', current_lr * lr_decay)
+        logging.info('sgd lr decayed to ' + str(optimizer.lr))
+    # pytorch
+    else:
+        for p in optimizer.param_groups:
+            p['lr'] *= lr_decay
+            logging.info('sgd lr decayed to ' + str(p["lr"]))

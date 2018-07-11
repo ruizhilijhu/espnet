@@ -11,6 +11,7 @@ import math
 import os
 import pickle
 import sys
+# import pdb
 
 # chainer related
 import chainer
@@ -23,6 +24,7 @@ from chainer.training import extensions
 import torch
 
 # spnet related
+from asr_utils import sgd_lr_decay
 from asr_utils import adadelta_eps_decay
 from asr_utils import CompareValueTrigger
 from asr_utils import converter_kaldi
@@ -102,6 +104,7 @@ class PytorchSeqUpdaterKaldi(training.StandardUpdater):
         self.model = model
         self.grad_clip_threshold = grad_clip_threshold
         self.num_gpu = len(device)
+        self.device = device
 
     # The core part of the update routine can be customized by overriding.
     def update_core(self):
@@ -135,8 +138,24 @@ class PytorchSeqUpdaterKaldi(training.StandardUpdater):
             self.model.parameters(), self.grad_clip_threshold)
         logging.info('grad norm={}'.format(grad_norm))
         if math.isnan(grad_norm):
-            logging.warning('grad norm is nan. Do not update model.')
+            names = []
+            for name, param in self.model.named_parameters():
+                if param.grad is not None:
+                    param_norm = param.grad.data.norm(2)
+                    if math.isnan(param_norm):
+                        names += [name]
+                        param.grad.data = torch.zeros(param.grad.data.size()).cuda(self.device[0]) if self.num_gpu > 0 else torch.zeros(param.grad.data.size()) # only support single gpu
+                        logging.warning('{}: grad norm is nan. Freeze these parameters.'.format(name))
+                        # param.requires_grad = False
+                        # pdb.set_trace()
+            optimizer.step()
+            # pdb.set_trace()
+            # for name, param in self.model.named_parameters():
+            #     if name in names:
+            #         # logging.warning('{}: After update, unfreeze these parameters.'.format(name))
+            #         param.requires_grad = True
         else:
+            logging.warning('update model!!!!!.')
             optimizer.step()
         delete_feat(x)
 
@@ -257,6 +276,9 @@ def train(args):
             model.parameters(), rho=0.95, eps=args.eps)
     elif args.opt == 'adam':
         optimizer = torch.optim.Adam(model.parameters())
+    elif args.opt == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,
+            momentum=args.mom, weight_decay=args.wd)
 
     # FIXME: TOO DIRTY HACK
     setattr(optimizer, "target", reporter)
@@ -357,6 +379,25 @@ def train(args):
                            trigger=CompareValueTrigger(
                                'validation/main/loss',
                                lambda best_value, current_value: best_value < current_value))
+    elif args.opt == 'sgd':
+        if args.criterion == 'acc' and mtl_mode is not 'ctc':
+            trainer.extend(restore_snapshot(model, args.outdir + '/model.acc.best', load_fn=torch_load),
+                           trigger=CompareValueTrigger(
+                               'validation/main/acc',
+                               lambda best_value, current_value: best_value > current_value))
+            trainer.extend(sgd_lr_decay(args.lr_decay),
+                           trigger=CompareValueTrigger(
+                               'validation/main/acc',
+                               lambda best_value, current_value: best_value > current_value))
+        elif args.criterion == 'loss':
+            trainer.extend(restore_snapshot(model, args.outdir + '/model.loss.best', load_fn=torch_load),
+                           trigger=CompareValueTrigger(
+                               'validation/main/loss',
+                               lambda best_value, current_value: best_value < current_value))
+            trainer.extend(sgd_lr_decay(args.lr_decay),
+                           trigger=CompareValueTrigger(
+                               'validation/main/loss',
+                               lambda best_value, current_value: best_value < current_value))
 
     # Write a log of evaluation statistics for each epoch
     trainer.extend(extensions.LogReport(trigger=(100, 'iteration')))
@@ -368,6 +409,11 @@ def train(args):
             'eps', lambda trainer: trainer.updater.get_optimizer('main').param_groups[0]["eps"]),
             trigger=(100, 'iteration'))
         report_keys.append('eps')
+    elif args.opt == 'sgd':
+        trainer.extend(extensions.observe_value(
+            'lr', lambda trainer: trainer.updater.get_optimizer('main').param_groups[0]["lr"]),
+            trigger=(100, 'iteration'))
+        report_keys.append('lr')
     trainer.extend(extensions.PrintReport(
         report_keys), trigger=(100, 'iteration'))
 

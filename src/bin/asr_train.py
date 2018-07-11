@@ -57,7 +57,7 @@ def main():
     # network archtecture
     # encoder
     parser.add_argument('--etype', default='blstmp', type=str,
-                        choices=['blstm', 'blstmp', 'vggblstmp', 'vggblstm'],
+                        choices=['blstm', 'blstmp', 'vggblstmp', 'vggblstm', 'vggbnblstm', 'vggbnblstmp', 'resnetblstm','resnetblstmp', 'resnetbnblstmp', 'resnetbnblstm','cnnblstmp','vggbnblstmpfloor', 'blstmsubsample', 'blstmpbn','fwblstmp', 'resnetbnsdpblstmp','resnetbnsdpblstm','resnetsdpblstmp','resnetsdpblstm', 'vggceilblstm','resnetblstmpnelson', 'vggceilblstmp','resnetceilblstm','resnetceilblstmp'],
                         help='Type of encoder network architecture')
     parser.add_argument('--elayers', default=4, type=int,
                         help='Number of encoder layers')
@@ -117,8 +117,16 @@ def main():
                         help='Batch size is reduced if the output sequence length > ML')
     # optimization related
     parser.add_argument('--opt', default='adadelta', type=str,
-                        choices=['adadelta', 'adam'],
+                        choices=['adadelta', 'adam', 'sgd'],
                         help='Optimizer')
+    parser.add_argument('--lr', default=1e-3, type=float,
+                        help='Learning rate constant for sgd optimizer')
+    parser.add_argument('--lr_decay', default=1e-1, type=float,
+                        help='Learning rate decay (lr*decay) constant for sgd optimizer')
+    parser.add_argument('--mom', default=0.9, type=float,
+                        help='Momentum constant for sgd optimizer')
+    parser.add_argument('--wd', default=0, type=float,
+                        help='MWeight decay constant for sgd optimizer')
     parser.add_argument('--eps', default=1e-8, type=float,
                         help='Epsilon constant for optimizer')
     parser.add_argument('--eps-decay', default=0.01, type=float,

@@ -53,6 +53,12 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 opt=adadelta
 epochs=20
 
+# sgd parameters
+lr=1e-3
+lr_decay=1e-1
+mom=0.9
+wd=0
+
 # decoding parameter
 beam_size=20
 penalty=0.0
@@ -68,20 +74,23 @@ tag="" # tag for managing experiments.
 # non-target languages: cantonese bengali pashto turkish vietnamese haitian tamil kurmanji tokpisin georgian
 train_set=tr_babel10
 train_dev=dt_babel10
+
+recog_set="dt_babel_cantonese dt_babel_bengali dt_babel_pashto dt_babel_turkish dt_babel_vietnamese dt_babel_haitian dt_babel_tamil dt_babel_kurmanji dt_babel_tokpisin dt_babel_georgian"
+
 # non-target
-recog_set="dt_babel_cantonese et_babel_cantonese dt_babel_bengali et_babel_bengali dt_babel_pashto et_babel_pashto dt_babel_turkish et_babel_turkish\
- dt_babel_vietnamese et_babel_vietnamese dt_babel_haitian et_babel_haitian\
- dt_babel_tamil et_babel_tamil dt_babel_kurmanji et_babel_kurmanji dt_babel_tokpisin et_babel_tokpisin dt_babel_georgian et_babel_georgian"
+#recog_set="dt_babel_cantonese et_babel_cantonese dt_babel_bengali et_babel_bengali dt_babel_pashto et_babel_pashto dt_babel_turkish et_babel_turkish\
+# dt_babel_vietnamese et_babel_vietnamese dt_babel_haitian et_babel_haitian\
+# dt_babel_tamil et_babel_tamil dt_babel_kurmanji et_babel_kurmanji dt_babel_tokpisin et_babel_tokpisin dt_babel_georgian et_babel_georgian"
 # target
-recog_set="dt_babel_assamese et_babel_assamese dt_babel_tagalog et_babel_tagalog dt_babel_swahili et_babel_swahili dt_babel_lao et_babel_lao dt_babel_zulu et_babel_zulu
- dt_csj_japanese et_csj_japanese_1 et_csj_japanese_2 et_csj_japanese_3\
- dt_libri_english_clean dt_libri_english_other et_libri_english_clean et_libri_english_other"
-# whole set
-recog_set="dt_babel_cantonese et_babel_cantonese dt_babel_assamese et_babel_assamese dt_babel_bengali et_babel_bengali dt_babel_pashto et_babel_pashto dt_babel_turkish et_babel_turkish\
- dt_babel_vietnamese et_babel_vietnamese dt_babel_haitian et_babel_haitian dt_babel_swahili et_babel_swahili dt_babel_lao et_babel_lao dt_babel_tagalog et_babel_tagalog\
- dt_babel_tamil et_babel_tamil dt_babel_kurmanji et_babel_kurmanji dt_babel_zulu et_babel_zulu dt_babel_tokpisin et_babel_tokpisin dt_babel_georgian et_babel_georgian\
- dt_csj_japanese et_csj_japanese_1 et_csj_japanese_2 et_csj_japanese_3\
- dt_libri_english_clean dt_libri_english_other et_libri_english_clean et_libri_english_other"
+#recog_set="dt_babel_assamese et_babel_assamese dt_babel_tagalog et_babel_tagalog dt_babel_swahili et_babel_swahili dt_babel_lao et_babel_lao dt_babel_zulu et_babel_zulu
+# dt_csj_japanese et_csj_japanese_1 et_csj_japanese_2 et_csj_japanese_3\
+# dt_libri_english_clean dt_libri_english_other et_libri_english_clean et_libri_english_other"
+## whole set
+#recog_set="dt_babel_cantonese et_babel_cantonese dt_babel_assamese et_babel_assamese dt_babel_bengali et_babel_bengali dt_babel_pashto et_babel_pashto dt_babel_turkish et_babel_turkish\
+# dt_babel_vietnamese et_babel_vietnamese dt_babel_haitian et_babel_haitian dt_babel_swahili et_babel_swahili dt_babel_lao et_babel_lao dt_babel_tagalog et_babel_tagalog\
+# dt_babel_tamil et_babel_tamil dt_babel_kurmanji et_babel_kurmanji dt_babel_zulu et_babel_zulu dt_babel_tokpisin et_babel_tokpisin dt_babel_georgian et_babel_georgian\
+# dt_csj_japanese et_csj_japanese_1 et_csj_japanese_2 et_csj_japanese_3\
+# dt_libri_english_clean dt_libri_english_other et_libri_english_clean et_libri_english_other"
 
 # subset options
 # select the number of speakers for subset training experiments. (e.g. 1000; select 1000 speakers). Default: select the whole train set.
@@ -243,7 +252,12 @@ if [ ${stage} -le 2 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+
+    if [[ $opt == "sgd" ]]; then
+        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+    else
+        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+    fi
     if ${do_delta}; then
         expdir=${expdir}_delta
     fi
@@ -282,8 +296,13 @@ if [ ${stage} -le 3 ]; then
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
-        --epochs ${epochs}
+        --epochs ${epochs} \
+        --lr ${lr} \
+        --lr_decay ${lr_decay} \
+        --mom ${mom} \
+        --wd ${wd}
 fi
+
 
 if [ ${stage} -le 4 ]; then
     echo "stage 4: Decoding"
