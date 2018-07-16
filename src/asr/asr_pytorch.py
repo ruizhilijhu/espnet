@@ -35,6 +35,7 @@ from asr_utils import PlotAttentionReport
 from asr_utils import restore_snapshot
 from e2e_asr_attctc_th import E2E
 from e2e_asr_attctc_th import Loss
+from e2e_asr_attctc_th import torch_is_old
 
 # for kaldi io
 import kaldi_io_py
@@ -71,25 +72,25 @@ class PytorchSeqEvaluaterKaldi(extensions.Evaluator):
 
         summary = reporter_module.DictSummary()
 
+        self.model.eval()
+        if not torch_is_old:
+            torch.set_grad_enabled(False)
+
         for batch in it:
             observation = {}
-            if torch.__version__ != "0.3.1":
-                torch.set_grad_enabled(False)
             with reporter_module.report_scope(observation):
                 # read scp files
                 # x: original json with loaded features
                 #    will be converted to chainer variable later
                 x = self.converter(batch)
-                self.model.eval()
                 self.model(x)
                 delete_feat(x)
-
-            if torch.__version__ != "0.3.1":
-                torch.set_grad_enabled(True)
 
             summary.add(observation)
 
         self.model.train()
+        if not torch_is_old:
+            torch.set_grad_enabled(True)
 
         return summary.compute_mean()
 
@@ -134,7 +135,11 @@ class PytorchSeqUpdaterKaldi(training.StandardUpdater):
             loss.backward()  # Backprop
         loss.detach()  # Truncate the graph
         # compute the gradient norm to check if it is normal or not
-        grad_norm = torch.nn.utils.clip_grad_norm(
+        if torch_is_old:
+            clip = torch.nn.utils.clip_grad_norm
+        else:
+            clip = torch.nn.utils.clip_grad_norm_
+        grad_norm = clip(
             self.model.parameters(), self.grad_clip_threshold)
         logging.info('grad norm={}'.format(grad_norm))
         if math.isnan(grad_norm):
@@ -487,6 +492,9 @@ def recog(args):
     # read json data
     with open(args.recog_json, 'rb') as f:
         recog_json = json.load(f)['utts']
+
+    if not torch_is_old:
+        torch.set_grad_enabled(False)
 
     new_json = {}
     for name in recog_json.keys():
