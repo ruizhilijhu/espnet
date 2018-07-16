@@ -57,7 +57,7 @@ def main():
     # network archtecture
     # encoder
     parser.add_argument('--etype', default='blstmp', type=str,
-                        choices=['blstm', 'blstmp', 'vggblstmp', 'vggblstm', 'vggbnblstm', 'vggbnblstmp', 'resnetblstm','resnetblstmp', 'resnetbnblstmp', 'resnetbnblstm','cnnblstmp','vggbnblstmpfloor', 'blstmsubsample', 'blstmpbn','fwblstmp', 'resnetbnsdpblstmp','resnetbnsdpblstm','resnetsdpblstmp','resnetsdpblstm', 'vggceilblstm','resnetblstmpnelson', 'vggceilblstmp','resnetceilblstm','resnetceilblstmp'],
+                        choices=['blstm', 'blstmp', 'vggblstmp', 'vggblstm', 'vggbnblstm', 'vggbnblstmp', 'resnetblstm','resnetblstmp', 'resnetbnblstmp', 'resnetbnblstm','cnnblstmp','vggbnblstmpfloor', 'blstmss', 'blstmpbn','fwblstmp', 'resnetbnsdpblstmp','resnetbnsdpblstm','resnetsdpblstmp','resnetsdpblstm', 'vggceilblstm','resnetblstmpnelson', 'vggceilblstmp','resnetceilblstm','resnetceilblstmp','resnetorigblstmp','resnetbnorigblstmp','vggopblstm','vggopblstmp','resnetopblstm','resnetopblstmp', 'vggsjblstm', 'vggbiasblstm'],
                         help='Type of encoder network architecture')
     parser.add_argument('--elayers', default=4, type=int,
                         help='Number of encoder layers')

@@ -69,14 +69,24 @@ def _get_vgg2l_odim(idim, in_channel=3, out_channel=128):
     return int(idim) * out_channel  # numer of channels
 
 
-def _get_maxpooling2_odim(idim, in_channel=3, out_channel=128, ceil_mode=False):
+
+def _get_maxpooling2_odim(idim, in_channel=3, out_channel=128, ceil_mode=False, mode='regular'):
 
     idim = idim / in_channel
-    s, p, k = [2, 0, 2]
     fn = np.ceil if ceil_mode else np.floor
-    idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
-    idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+    if mode == 'regular':
+        s, p, k = [2, 0, 2]
+
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+    elif mode =='resnetorig':
+        s, p, k = [2, 3, 7]
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+        s, p, k = [2, 1, 3]
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+
     return int(idim) * out_channel  # numer of channels
+
 
 def _get_cnn1l_odim(idim, in_channel=3, out_channel=64):
 
@@ -2014,7 +2024,12 @@ class Encoder(torch.nn.Module):
                                elayers, eunits, eprojs,
                                subsample, dropout)
             logging.info('Use CNN-VGG + BLSTMP for encoder')
-
+        elif etype == 'vggopblstmp':
+            self.enc1 = VGG(batch_norm=False, spatial_dp=False, in_channels=in_channel,inplace=False)
+            self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                               elayers, eunits, eprojs,
+                               subsample, dropout)
+            logging.info('Use CNN-VGG-outplace + BLSTMP for encoder')
         elif etype == 'vggceilblstmp':
             self.enc1 = VGG(batch_norm=False, spatial_dp=False, in_channels=in_channel, ceil_mode=True)
             self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel, ceil_mode=True),
@@ -2026,11 +2041,29 @@ class Encoder(torch.nn.Module):
             self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
             logging.info('Use CNN-VGG + BLSTM for encoder')
+        elif etype == 'vggbiasblstm':
+            self.enc1 = VGG(batch_norm=False, spatial_dp=False, in_channels=in_channel, bias=True)
+            self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('Use CNN-VGG-bias + BLSTM for encoder')
+        elif etype == 'vggsjblstm':
+            self.enc1 = VGG2L(in_channel)
+            self.enc2 = BLSTM(_get_vgg2l_odim(idim, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('Use CNN-VGG-sj + BLSTM for encoder')
+
+        elif etype == 'vggopblstm':
+            self.enc1 = VGG(batch_norm=False, spatial_dp=False, in_channels=in_channel, inplace=False)
+            self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('Use CNN-VGG-outplace + BLSTM for encoder')
         elif etype == 'vggceilblstm':
             self.enc1 = VGG(batch_norm=False, spatial_dp=False, in_channels=in_channel, ceil_mode=True)
             self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel, ceil_mode=True),
                               elayers, eunits, eprojs, dropout)
             logging.info('Use CNN-VGG-ceil + BLSTM for encoder')
+
+
 
         elif etype == 'vggbnblstm':
             self.enc1 = VGG(batch_norm=True, spatial_dp=False, in_channels=in_channel)
@@ -2048,6 +2081,11 @@ class Encoder(torch.nn.Module):
             self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
             logging.info('Use CNN-ResNet + BLSTM for encoder')
+        elif etype == 'resnetopblstm':
+            self.enc1 = ResNet(batch_norm=False, spatial_dp=False, in_channels=in_channel,inplace=False)
+            self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('Use CNN-ResNet-outplace + BLSTM for encoder')
         elif etype == 'resnetceilblstm':
             self.enc1 = ResNet(batch_norm=False, spatial_dp=False, in_channels=in_channel, ceil_mode=True)
             self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel, ceil_mode=True),
@@ -2060,12 +2098,24 @@ class Encoder(torch.nn.Module):
                                elayers, eunits, eprojs,
                                subsample, dropout)
             logging.info('Use CNN-ResNet + BLSTMP for encoder')
-        elif etype == 'resnetblstmpnelson':
-            self.enc1 = RESNET_nelson(in_channel=in_channel)
-            self.enc2 = BLSTMP(_get_vgg2l_odim(idim), elayers, eunits, eprojs,
+        elif etype == 'resnetopblstmp':
+            self.enc1 = ResNet(batch_norm=False, spatial_dp=False, in_channels=in_channel, inplace=False)
+            self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                               elayers, eunits, eprojs,
                                subsample, dropout)
-            logging.info('Use CNN-ResNet + BLSTMP for encoder')
-
+            logging.info('Use CNN-ResNet-outplace + BLSTMP for encoder')
+        elif etype == 'resnetorigblstmp':
+            self.enc1 = ResNetOrig(batch_norm=False, spatial_dp=False, in_channels=in_channel)
+            self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel, mode='resnetorig'),
+                               elayers, eunits, eprojs,
+                               subsample, dropout)
+            logging.info('Use CNN-ResNet-orig + BLSTMP for encoder')
+        elif etype == 'resnetbnorigblstmp':
+            self.enc1 = ResNetOrig(batch_norm=True, spatial_dp=False, in_channels=in_channel)
+            self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel, mode='resnetorig'),
+                               elayers, eunits, eprojs,
+                               subsample, dropout)
+            logging.info('Use CNN-ResNet-bn-orig + BLSTMP for encoder')
         elif etype == 'resnetceilblstmp':
             self.enc1 = ResNet(batch_norm=False, spatial_dp=False, in_channels=in_channel, ceil_mode=True)
             self.enc2 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel, ceil_mode=True),
@@ -2114,8 +2164,8 @@ class Encoder(torch.nn.Module):
                                elayers, eunits, eprojs,
                                subsample, dropout)
             logging.info('Use CNN + BLSTMP for encoder for debugging NaN gradient problem')
-        elif etype == 'blstmsubsample':
-            self.enc1 = BLSTMSUBSAMPLE(idim, elayers, eunits,
+        elif etype == 'blstmss':
+            self.enc1 = BLSTMSS(idim, elayers, eunits,
                                eprojs, subsample, dropout)
             logging.info('BLSTM with subsampling without every-layer projection for encoder')
         elif etype == 'blstmpbn':
@@ -2152,9 +2202,16 @@ class Encoder(torch.nn.Module):
         elif self.etype == 'vggblstm':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'vggbiasblstm':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
         elif self.etype == 'vggceilblstm':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'vggceilblstmp':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+
         elif self.etype == 'vggbnblstm':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
@@ -2173,6 +2230,12 @@ class Encoder(torch.nn.Module):
         elif self.etype == 'resnetbnblstmp':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'resnetbnorigblstmp':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'resnetorigblstmp':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
         elif self.etype == 'resnetbnsdpblstm':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
@@ -2185,6 +2248,21 @@ class Encoder(torch.nn.Module):
         elif self.etype == 'resnetsdpblstmp':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'vggopblstmp':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'vggsjblstm':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'vggopblstm':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'resnetopblstmp':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
+        elif self.etype == 'resnetopblstm':
+            xs, ilens = self.enc1(xs, ilens)
+            xs, ilens = self.enc2(xs, ilens)
 
         elif self.etype == 'resnetblstmpnelson':
             xs, ilens = self.enc1(xs, ilens)
@@ -2193,7 +2271,7 @@ class Encoder(torch.nn.Module):
         elif self.etype == 'cnnblstmp':
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
-        elif self.etype == 'blstmsubsample':
+        elif self.etype == 'blstmss':
             xs, ilens = self.enc1(xs, ilens)
         elif self.etype == 'blstmpbn':
             xs, ilens = self.enc1(xs, ilens)
@@ -2296,9 +2374,9 @@ class BLSTMPBN(torch.nn.Module):
 
         return xpad, ilens  # x: utt list of frame x dim
 
-class BLSTMSUBSAMPLE(torch.nn.Module):
+class BLSTMSS(torch.nn.Module):
     def __init__(self, idim, elayers, cdim, hdim, subsample, dropout):
-        super(BLSTMSUBSAMPLE, self).__init__()
+        super(BLSTMSS, self).__init__()
         for i in six.moves.range(elayers):
             if i == 0:
                 inputdim = idim
@@ -2314,7 +2392,8 @@ class BLSTMSUBSAMPLE(torch.nn.Module):
         self.l_last = torch.nn.Linear(cdim * 2, hdim)
 
     def forward(self, xpad, ilens):
-        '''BLSTMSUBSAMPLE forward
+        '''BLSTMSS forward # TODO: memeory issue
+        
 
         :param xs:
         :param ilens:
@@ -2326,6 +2405,7 @@ class BLSTMSUBSAMPLE(torch.nn.Module):
             bilstm = getattr(self, 'bilstm' + str(layer))
             bilstm.flatten_parameters()
             ys, (hy, cy) = bilstm(xpack)
+            del hy, cy
             # ys: utt list of frame x cdim x 2 (2: means bidirectional)
             ypad, ilens = pad_packed_sequence(ys, batch_first=True)
             sub = self.subsample[layer + 1]
@@ -2334,7 +2414,6 @@ class BLSTMSUBSAMPLE(torch.nn.Module):
                 ilens = [(i + 1) // sub for i in ilens]
             # (sum _utt frame_utt) x dim
             xpad = ypad.contiguous().view(ypad.size(0), ypad.size(1), -1)
-            del hy, cy
 
         # (sum _utt frame_utt) x dim
         projected = torch.tanh(self.l_last(
@@ -2506,14 +2585,14 @@ class VGG2LBN(torch.nn.Module):
 
 class ConvBasicBlock(torch.nn.Module):
     """convolution followed by optional batchnorm, nonlinear, spatialdropout, maxpooling"""
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True, nonlinear=False, batch_norm=False, spatial_dp=False, maxpooling=False, maxpool_kernel_size=3, maxpool_stride=2, maxpool_padding=1, maxpool_ceil_mode=False):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True, nonlinear=False, batch_norm=False, spatial_dp=False, maxpooling=False, maxpool_kernel_size=3, maxpool_stride=2, maxpool_padding=1, maxpool_ceil_mode=False, inplace=True):
         super(ConvBasicBlock, self).__init__()
         self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
                      padding=padding, bias=bias)
         # todo see performace diff with/without eval() in dp and bn case
         self.sdp = torch.nn.Dropout2d() # spatial dropout
         self.bn = torch.nn.BatchNorm2d(out_channels)
-        self.relu = torch.nn.ReLU(inplace=True)
+        self.relu = torch.nn.ReLU(inplace=inplace)
         self.maxpool = torch.nn.MaxPool2d(kernel_size=maxpool_kernel_size, stride=maxpool_stride,
                                           padding=maxpool_padding, ceil_mode=maxpool_ceil_mode)
         self.spatial_dp = spatial_dp
@@ -2530,22 +2609,23 @@ class ConvBasicBlock(torch.nn.Module):
         return out
 
 class CNNBasicBlock(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, batch_norm=False, spatial_dp=False, resnet=False):
+    def __init__(self, in_channels, out_channels, stride=1, batch_norm=False, spatial_dp=False, resnet=False, inplace=True, bias=False):
         super(CNNBasicBlock, self).__init__()
 
         # residual: conv3*3 --> (spatial_dp) --> (batchnorm) --> relu --> cov3*3 --> (spatial_dp) --> (batchnorm)
         # shortcut: conv1*1 --> (spatial_dp) --> (batchnorm)  (optional for resnet)
         # out: relu(residual + [shortcut])
 
-        self.conv1 = ConvBasicBlock(in_channels, out_channels, 3, stride, 1, False, True, batch_norm, spatial_dp)
-        self.conv2 = ConvBasicBlock(out_channels, out_channels, 3, 1, 1, False, False, batch_norm, spatial_dp)
+        self.conv1 = ConvBasicBlock(in_channels, out_channels, 3, stride, 1, bias, True, batch_norm, spatial_dp, inplace=inplace)
+        self.conv2 = ConvBasicBlock(out_channels, out_channels, 3, 1, 1, bias, False, batch_norm, spatial_dp, inplace=inplace)
         self.relu = torch.nn.ReLU(inplace=True)
         if (in_channels != out_channels or stride != 1) and resnet:
-            self.downsample = ConvBasicBlock(in_channels, out_channels, 1, stride, 0, False, False, batch_norm, spatial_dp)
+            self.downsample = ConvBasicBlock(in_channels, out_channels, 1, stride, 0, bias, False, batch_norm, spatial_dp, inplace=inplace)
             self.downsampling = True
         else:
             self.downsampling = False
         self.resnet=resnet
+        self.inplace = inplace
 
     def forward(self, x):
         residual = x
@@ -2553,20 +2633,23 @@ class CNNBasicBlock(torch.nn.Module):
         out = self.conv2(out)
         if self.downsampling and self.resnet:
             residual = self.downsample(residual)
-            out += residual
+            if self.inplace:
+                out += residual
+            else:
+                out = out + residual
         out = self.relu(out)
         return out
 
 class ResNet(torch.nn.Module):
 
-    def __init__(self, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1):
+    def __init__(self, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1, inplace=True):
         super(ResNet, self).__init__()
 
         # self.conv0 = ConvBasicBlock(in_channels, 16, 1, 1, 0, False, True, batch_norm, spatial_dp)
-        self.resblock1 = CNNBasicBlock(in_channels, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True)
+        self.resblock1 = CNNBasicBlock(in_channels, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True, inplace=inplace)
         self.maxpool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
 
-        self.resblock2 = CNNBasicBlock(64, 128, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True)
+        self.resblock2 = CNNBasicBlock(64, 128, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True,inplace=inplace)
         self.maxpool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
         self.in_channels = in_channels
         self.ceil_mode = ceil_mode
@@ -2608,14 +2691,14 @@ class ResNet(torch.nn.Module):
 
 class VGG(torch.nn.Module):
 
-    def __init__(self, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1):
+    def __init__(self, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1,inplace=True, bias=False):
         super(VGG, self).__init__()
 
         # self.conv0 = ConvBasicBlock(in_channels, 16, 1, 1, 0, False, True, batch_norm, spatial_dp)
-        self.resblock1 = CNNBasicBlock(in_channels, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=False)
+        self.resblock1 = CNNBasicBlock(in_channels, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=False,inplace=inplace, bias=bias)
         self.maxpool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
 
-        self.resblock2 = CNNBasicBlock(64, 128, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=False)
+        self.resblock2 = CNNBasicBlock(64, 128, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=False,inplace=inplace, bias=bias)
         self.maxpool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
         self.in_channels = in_channels
         self.ceil_mode = ceil_mode
@@ -2655,75 +2738,49 @@ class VGG(torch.nn.Module):
 
         return xs, ilens
 
+class ResNetOrig(torch.nn.Module):
+    # ceil mode is not supported due to conv.
+    def __init__(self, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1, inplace=True):
+        super(ResNetOrig, self).__init__()
 
-####################### nelson implementation  vgg and resent
-class BottleneckA(torch.nn.Module):
-    def __init__(self, in_channels, mid_channels, out_channels,
-                 stride=1, initialW=None):
-        super(BottleneckA, self).__init__()
-        self.shortcut = torch.nn.Conv2d(
-            in_channels, out_channels, 1, stride=stride, padding=0, bias=False)
-        self.conv1 = torch.nn.Conv2d(
-            in_channels, mid_channels, 3, stride=1, padding=1, bias=False)
-        self.conv2 = torch.nn.Conv2d(
-            mid_channels, out_channels, 3, stride=stride, padding=1, bias=False)
+        self.conv0 = ConvBasicBlock(in_channels, 64, 7, 2, 3, False, True, batch_norm, spatial_dp)
+        self.maxpool1 = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1, ceil_mode=ceil_mode)
 
-    def __call__(self, x):
-        res_x = F.relu(self.conv1(x))
-        res_x = self.conv2(res_x)
-        x = self.shortcut(x)
-        return F.relu(x + res_x)
+        self.resblock1 = CNNBasicBlock(64, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True,inplace=inplace)
+        self.resblock2 = CNNBasicBlock(64, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=True,inplace=inplace)
 
+        self.in_channels = in_channels
+        self.ceil_mode = ceil_mode
 
-class RESNET_nelson(torch.nn.Module):
-    def __init__(self, in_channel=1, mode='regular'):
-        super(RESNET_nelson, self).__init__()
-        # CNN layer (RESNET motivated)
-
-        self.conv0 = torch.nn.Conv2d(in_channel, 16, 1, stride=1, bias=False)
-        self.resblock1 = BottleneckA(16, 64, 64)
-        self.resblock2 = BottleneckA(64, 128, 128)
-
-        self.in_channel = in_channel
-        self.mode = mode
-
-    def __call__(self, xs, ilens):
-        '''RESNET forward
-
-        :param xs:
-        :param ilens:
-        :return:
-        '''
+    def forward(self, xs, ilens):
         logging.info(self.__class__.__name__ + ' input lengths: ' + str(ilens))
 
-        # x: utt x frame x dim
-        # xs = F.pad_sequence(xs)
+        # xs: input: utt x frame x dim
+        # xs: output: utt x 1 (input channel num) x frame x dim
+        xs = xs.contiguous().view(xs.size(0), xs.size(1), self.in_channels, xs.size(2) // self.in_channels).transpose(1, 2)
 
-        # x: utt x 1 (input channel num) x frame x dim
-        # xs = xs.transpose(1, 2)
-        #xs = F.swapaxes(F.reshape(
-        #    xs, (xs.shape[0], xs.shape[1], self.in_channel, xs.shape[2] // self.in_channel)), 1, 2)
-        xs = xs.contiguous().view(xs.size(0), xs.size(1), self.in_channel,
-                     xs.size(2) // self.in_channel).transpose(1, 2)
-
-        if self.mode == 'regular':
-            xs = self.conv0(xs)
-            xs = self.resblock1(xs)
-            xs = F.max_pooling_2d(xs, 2, stride=2)
-
-            xs = self.resblock2(xs)
-            xs = F.max_pooling_2d(xs, 2, stride=2)
+        xs = self.conv0(xs)
+        xs = self.resblock1(xs)
+        xs = self.resblock2(xs)
 
         # change ilens accordingly
+        # in maxpooling layer: stride(2), padding(0), kernel(2)
+        s, p, k = [2,3,7]
+
+        fnc = np.ceil if self.ceil_mode else np.floor
+        s, p, k = [2, 3, 7]
         ilens = np.array(
-            np.ceil(np.array(ilens, dtype=np.float32) / 2), dtype=np.int64)
+            fnc(((np.array(ilens, dtype=np.float32)+2*p-k)/s)+1), dtype=np.int64)
+        s, p, k = [2, 1, 3]
         ilens = np.array(
-            np.ceil(np.array(ilens, dtype=np.float32) / 2), dtype=np.int64).tolist()
+            fnc(((np.array(ilens, dtype=np.float32)+2*p-k)/s)+1), dtype=np.int64).tolist()
 
         # x: utt_list of frame (remove zeropaded frames) x (input channel num x dim)
         xs = xs.transpose(1, 2)
+
         xs = xs.contiguous().view(
             xs.size(0), xs.size(1), xs.size(2) * xs.size(3))
+
         xs = [xs[i, :ilens[i]] for i in range(len(ilens))]
         xs = pad_list(xs, 0.0)
 

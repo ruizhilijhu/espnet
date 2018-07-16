@@ -155,7 +155,7 @@ class PytorchSeqUpdaterKaldi(training.StandardUpdater):
             #         # logging.warning('{}: After update, unfreeze these parameters.'.format(name))
             #         param.requires_grad = True
         else:
-            logging.warning('update model!!!!!.')
+            # logging.warning('update model!!!!!.')
             optimizer.step()
         delete_feat(x)
 
