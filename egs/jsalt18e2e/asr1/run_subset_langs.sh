@@ -72,13 +72,13 @@ tag="" # tag for managing experiments.
 
 # data set
 # non-target languages: cantonese bengali pashto turkish vietnamese haitian tamil kurmanji tokpisin georgian
-train_set=tr_babel10_1000spk
+train_set=tr_babel10
 train_dev=dt_babel10
 
-recog_set="dt_babel_bengali dt_babel_cantonese"
+recog_set="dt_babel_vietnamese"
 
 # languages subset option
-lang_list="bengali cantonese"
+lang_list="vietnamese"
 
 . utils/parse_options.sh || exit 1;
 
@@ -126,12 +126,22 @@ if [ ${stage} -le 1 ]; then
         utils/subset_data_dir.sh --spk-list data/${train_dev}/spk_list_${l} data/${train_dev} data/${train_dev}_${l}
     done
 
+
     if [ $num_lang -gt 1 ]; then
         data_list=$(echo $lang_list | awk -v dir=$train_set '{for(i=1;i<=NF;i++){ printf "data/%s_%s ",dir,$i} }')
-        utils/combine_data.sh data/${train_set}_${lang} $data_list
+        utils/combine_data.sh data/${train_set}_${lang}_orig $data_list
         data_list=$(echo $lang_list | awk -v dir=$train_dev '{for(i=1;i<=NF;i++){ printf "data/%s_%s ",dir,$i} }')
-        utils/combine_data.sh data/${train_dev}_${lang} $data_list
+        utils/combine_data.sh data/${train_dev}_${lang}_orig $data_list
+    else
+        utils/copy_data_dir.sh data/${train_set}_${lang} data/${train_set}_${lang}_orig
+        utils/copy_data_dir.sh data/${train_dev}_${lang} data/${train_dev}_${lang}_orig
+
     fi
+
+    # remove utt having more than 3000 frames or less than 10 frames or
+    # remove utt having more than 400 characters or no more than 0 characters
+    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_${lang}_orig data/${train_set}_${lang}
+    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_${lang}_orig data/${train_dev}_${lang}
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}_${lang}/feats.scp data/${train_set}_${lang}/cmvn.ark
