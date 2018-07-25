@@ -80,6 +80,14 @@ recog_set="dt_babel_vietnamese"
 # languages subset option
 lang_list="vietnamese"
 
+# multl-encoder multi-band
+numEncStreams=1
+numBands=1
+
+# for decoding only ; only works for multi case
+addGaussNoise=1
+l2weight=0.5
+
 . utils/parse_options.sh || exit 1;
 
 # data set
@@ -249,7 +257,11 @@ if [ ${stage} -le 3 ]; then
         --lr ${lr} \
         --lr_decay ${lr_decay} \
         --mom ${mom} \
-        --wd ${wd}
+        --wd ${wd} \
+        --numEncStreams ${numEncStreams} \
+        --numBands ${numBands} \
+        --l2weight ${l2weight} \
+        --addGaussNoise ${addGaussNoise}
 fi
 
 
@@ -281,6 +293,8 @@ if [ ${stage} -le 4 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
+            --addGaussNoise ${addGaussNoise} \
+            --l2weight ${l2weight} \
             &
         wait
 

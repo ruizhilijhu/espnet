@@ -59,7 +59,8 @@ def main():
     parser.add_argument('--etype', default='blstmp', type=str,
                         choices=['blstm', 'blstmp', 'blstmss', 'blstmpbn',
                                  'vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
-                                 'resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp', 'resnbblstm', 'resnbblstmp','resorigblstm'],
+                                 'resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp', 'resnbblstm', 'resnbblstmp','resorigblstm',
+                                 'multiVggblstmBlstmp','multiBandBlstmpBlstmp'],
                         help='Type of encoder network architecture')
     parser.add_argument('--elayers', default=4, type=int,
                         help='Number of encoder layers')
@@ -70,6 +71,14 @@ def main():
     parser.add_argument('--subsample', default=1, type=str,
                         help='Subsample input frames x_y_z means subsample every x frame at 1st layer, '
                              'every y frame at 2nd layer etc.')
+
+    # multi-encoder, multi-band
+    parser.add_argument('--numEncStreams', default=1, type=int, help='Number of encoder streams.')
+    parser.add_argument('--numBands', default=1, type=int, help='Number of band streams. Only 2-band [40+3,40+3] case is supported.')
+    parser.add_argument('--addGaussNoise', default=0, type=int, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
+    parser.add_argument('--l2weight', default=-1, type=float, help='fix l2 att weight for first encoder, then the second will be 1-l2weight, default:-1: no fix weights. for decoding')
+
+
     # loss
     parser.add_argument('--ctc_type', default='warpctc', type=str,
                         choices=['chainer', 'warpctc'],
@@ -79,7 +88,7 @@ def main():
                         choices=['noatt', 'dot', 'add', 'location', 'coverage',
                                  'coverage_location', 'location2d', 'location_recurrent',
                                  'multi_head_dot', 'multi_head_add', 'multi_head_loc',
-                                 'multi_head_multi_res_loc'],
+                                 'multi_head_multi_res_loc', 'me_loc','me_loc_l2w0.5','me_loc_l2dp'],
                         help='Type of attention architecture')
     parser.add_argument('--adim', default=320, type=int,
                         help='Number of attention transformation dimensions')

@@ -95,6 +95,7 @@ recog_set="dt_babel_cantonese dt_babel_bengali dt_babel_pashto dt_babel_turkish 
 # subset options
 # select the number of speakers for subset training experiments. (e.g. 1000; select 1000 speakers). Default: select the whole train set.
 subset_num_spk=""
+numEncStreams=1
 
 . utils/parse_options.sh || exit 1;
 
@@ -300,7 +301,8 @@ if [ ${stage} -le 3 ]; then
         --lr ${lr} \
         --lr_decay ${lr_decay} \
         --mom ${mom} \
-        --wd ${wd}
+        --wd ${wd} \
+        --numEncStreams ${numEncStreams}
 fi
 
 
