@@ -273,6 +273,15 @@ class E2E(torch.nn.Module):
         elif args.atype == 'me_loc_l2dp':
             self.att = MultiEncAttLoc(args.eprojs, args.dunits,
                               args.adim, args.aconv_chans, args.aconv_filts, args.numEncStreams, l2Dropout=True)
+        elif args.atype == 'me_attadd':
+            self.att = MultiEncAttAdd(args.eprojs, args.dunits,
+                              args.adim, args.numEncStreams)
+        elif args.atype == 'me_attadd_l2w0.5':
+            self.att = MultiEncAttAdd(args.eprojs, args.dunits,
+                              args.adim, args.numEncStreams, fixL2Weight=True, l2weight=args.l2weight)
+        elif args.atype == 'me_attadd_l2dp':
+            self.att = MultiEncAttAdd(args.eprojs, args.dunits,
+                              args.adim, args.numEncStreams, l2Dropout=True)
         else:
             logging.error(
                 "Error: need to specify an appropriate attention archtecture")
@@ -1015,6 +1024,144 @@ class MultiEncAttLoc(torch.nn.Module):
             # NOTE consider zero padding when compute w.
             e_l2 = linear_tensor(self.gvec_l2, torch.tanh(
                 att_conv_l2 + self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
+            w_l2 = F.softmax(scaling * e_l2, dim=1)
+
+
+        # weighted sum over flames
+        # utt x hdim
+        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
+        logging.info(self.__class__.__name__ + ' level two attention weight: ' )
+        logging.info(w_l2.data)
+
+        return c_l2, [w_l1, w_l2]
+
+class MultiEncAttAdd(torch.nn.Module):
+    '''location-aware attention
+
+    :param int eprojs: # projection-units of encoder
+    :param int dunits: # units of decoder
+    :param int att_dim: attention dimension
+    :param int aconv_chans: # channels of attention convolution
+    :param int aconv_filts: filter size of attention convolution
+    '''
+
+    def __init__(self, eprojs, dunits, att_dim, numEncStreams, l2Dropout=False, fixL2Weight=False, l2weight=-1):
+        super(MultiEncAttAdd, self).__init__()
+
+        # level 1 attention: one attention mechanism for each stream
+
+        for idx in range(numEncStreams):
+            setattr(self, "mlp_enc%d_l1" % idx, torch.nn.Linear(eprojs, att_dim))
+            setattr(self, "mlp_dec%d_l1" % idx, torch.nn.Linear(dunits, att_dim, bias=False))
+            setattr(self, "gvec%d_l1" % idx, torch.nn.Linear(att_dim, 1))
+
+
+        if not fixL2Weight: # l2weight is the fix attention weight for first stream
+            # level 2 attention: one attention mechanism for stream selection
+            self.mlp_enc_l2 = torch.nn.Linear(eprojs, att_dim)
+            self.mlp_dec_l2 = torch.nn.Linear(dunits, att_dim, bias=False)
+            self.gvec_l2 = torch.nn.Linear(att_dim, 1)
+
+
+        if l2Dropout:
+            self.dropout_l2 = torch.nn.Dropout2d(p=0.5)
+
+        self.dunits = dunits
+        self.eprojs = eprojs
+        self.att_dim = att_dim
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+        self.numEncStreams = numEncStreams
+        self.l2weight = l2weight
+        self.l2Droupout = l2Dropout
+        self.fixL2Weight = fixL2Weight
+
+
+    def reset(self):
+        '''reset states'''
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+
+    def forward(self, enc_hs_pad, enc_hs_len, dec_z, att_prev, scaling=2.0):
+        '''AttLoc forward
+
+        :param Variable enc_hs_pad: list of padded encoder hidden state (list(B x T_max x D_enc))
+        :param list enc_h_len: list of padded encoder hidden state lenght list((B))
+        :param Variable dec_z: docoder hidden state (B x D_dec)
+        :param Variable att_prev: list of previous attetion weight list(B x T_max)
+        :param float scaling: scaling parameter before applying softmax
+        :return: attentioin weighted encoder state (B, D_enc)
+        :rtype: Variable
+        :return: list of previous attentioin weights list(B x T_max)
+        :rtype: Variable
+        '''
+
+        # level 1 attention
+        batch = len(enc_hs_pad[0])
+        # pre-compute all h outside the decoder loop
+
+        if self.pre_compute_enc_h_l1 is None:
+            self.enc_h_l1 = enc_hs_pad  # list (utt x frame x hdim)
+            self.h_length_l1 = [self.enc_h_l1[idx].size(1) for idx in range(self.numEncStreams)]
+            # utt x frame x att_dim
+            self.pre_compute_enc_h_l1 = [linear_tensor(getattr(self, "mlp_enc%d_l1" % idx), self.enc_h_l1[idx]) for idx in range(self.numEncStreams)]
+
+        if dec_z is None:
+            dec_z = Variable(enc_hs_pad.data.new(batch, self.dunits).zero_())
+        else:
+            dec_z = dec_z.view(batch, self.dunits)
+
+        # initialize attention weight with uniform dist.
+        if att_prev is None:
+            att_prev_l1 = None
+            att_prev_l2 = [Variable(enc_hs_pad[0].data.new(
+                self.numEncStreams).zero_() + (1.0 / self.numEncStreams)) for _ in range(batch)]
+            att_prev_l2 = pad_list(att_prev_l2, 0) # utt x frame_max
+            att_prev = [att_prev_l1, att_prev_l2] # [[att_l1_1, att_l1_2, ...], att_l2_1]
+
+        # dec_z_tiled: utt x frame x att_dim
+        dec_z_tiled_l1 = [getattr(self, "mlp_dec%d_l1" % idx)(dec_z).view(batch, 1, self.att_dim) for idx in range(self.numEncStreams)]
+
+        # dot with gvec
+        # list(utt x frame x att_dim) -> list(utt x frame)
+        # NOTE consider zero padding when compute w.
+        e_l1 = [linear_tensor(getattr(self, "gvec%d_l1" % idx), torch.tanh(
+             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.numEncStreams)]
+        w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.numEncStreams)]
+
+        # weighted sum over flames
+        # list (utt x hdim)
+        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        self.enc_h_l2 = [torch.matmul(w_l1[idx].unsqueeze(1), self.enc_h_l1[idx]).squeeze(1) for idx in range(self.numEncStreams)]
+        self.enc_h_l2 = torch.stack(self.enc_h_l2, dim=1)  # utt x numEncStream x hdim
+
+        if self.l2Droupout: # TODO: (0,0) situation
+            self.enc_h_l2 = self.dropout_l2(self.enc_h_l2.unsqueeze(3)).squeeze(3)
+
+        # level 2 attention
+        if self.fixL2Weight:
+            w_l2 = att_prev[1]
+        else:
+            self.h_length_l2 = self.numEncStreams
+            self.pre_compute_enc_h_l2 = linear_tensor(self.mlp_enc_l2, self.enc_h_l2)
+
+            # dec_z_tiled: utt x frame x att_dim
+            dec_z_tiled_l2 = self.mlp_dec_l2(dec_z).view(batch, 1, self.att_dim)
+
+            # dot with gvec
+            # utt x frame x att_dim -> utt x frame
+            # NOTE consider zero padding when compute w.
+            e_l2 = linear_tensor(self.gvec_l2, torch.tanh(
+                 self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
             w_l2 = F.softmax(scaling * e_l2, dim=1)
 
 

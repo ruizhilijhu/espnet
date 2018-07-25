@@ -88,7 +88,7 @@ def main():
                         choices=['noatt', 'dot', 'add', 'location', 'coverage',
                                  'coverage_location', 'location2d', 'location_recurrent',
                                  'multi_head_dot', 'multi_head_add', 'multi_head_loc',
-                                 'multi_head_multi_res_loc', 'me_loc','me_loc_l2w0.5','me_loc_l2dp'],
+                                 'multi_head_multi_res_loc', 'me_loc','me_loc_l2w0.5','me_loc_l2dp','me_attadd','me_attadd_l2w0.5','me_attadd_l2dp',],
                         help='Type of attention architecture')
     parser.add_argument('--adim', default=320, type=int,
                         help='Number of attention transformation dimensions')
