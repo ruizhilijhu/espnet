@@ -1031,8 +1031,8 @@ class MultiEncAttLoc(torch.nn.Module):
         # utt x hdim
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
-        logging.info(self.__class__.__name__ + ' level two attention weight: ' )
-        logging.info(w_l2.data)
+        logging.warning(self.__class__.__name__ + ' level two attention weight: ' )
+        logging.warning(w_l2.data[0])
 
         return c_l2, [w_l1, w_l2]
 
@@ -1169,8 +1169,8 @@ class MultiEncAttAdd(torch.nn.Module):
         # utt x hdim
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
-        logging.info(self.__class__.__name__ + ' level two attention weight: ' )
-        logging.info(w_l2.data)
+        logging.warning(self.__class__.__name__ + ' level two attention weight: ' )
+        logging.warning(w_l2.data[0])
 
         return c_l2, [w_l1, w_l2]
 
@@ -2482,6 +2482,12 @@ class Decoder(torch.nn.Module):
                 att_ws_head = torch.stack([aw[h] for aw in att_ws], dim=1)
                 att_ws_sorted_by_head += [att_ws_head]
             att_ws = torch.stack(att_ws_sorted_by_head, dim=1).data.cpu().numpy()
+        elif isinstance(self.att, (MultiEncAttAdd, MultiEncAttLoc)):
+            # att_ws => list(len(odim)) of [[att1_l1, att2_l1, ...,attN, l1], att_l2]; N: numstreams
+            # list of [utt x (NumEnc+1) x T_max]
+            att_ws = [pad_list([a.transpose(0, 1) for a in aw[0]+ [aw[1]]], 0).transpose(0, 2).transpose(1, 2) for aw in att_ws]
+            # att_ws => utt x (NumEnc+1) x odim x T_max; T_max is the max length among all attention sets for all utterance
+            att_ws = torch.stack(att_ws, dim=2).data.cpu().numpy()
         else:
             # att_ws => list of attetions
             att_ws = torch.stack(att_ws, dim=1).data.cpu().numpy()
