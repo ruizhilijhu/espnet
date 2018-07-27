@@ -58,7 +58,7 @@ def main():
     # encoder
     parser.add_argument('--etype', default='blstmp', type=str,
                         choices=['blstm', 'blstmp', 'blstmss', 'blstmpbn',
-                                 'vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
+                                 'vgg', 'vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
                                  'resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp', 'resnbblstm', 'resnbblstmp','resorigblstm',
                                  'multiVggblstmBlstmp','multiBandBlstmpBlstmp'],
                         help='Type of encoder network architecture')

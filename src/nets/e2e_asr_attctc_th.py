@@ -2532,6 +2532,9 @@ class Encoder(torch.nn.Module):
             logging.info('BLSTM with every-layer projection for encoder with batchnorm')
 
         # vgg
+        elif etype == 'vgg':
+            self.enc1 = VGGOnly(idim=idim, eprojs=eprojs, in_channels=in_channel, )
+            logging.info('Use CNN-VGG for encoder')
         elif etype == 'vggblstm':
             self.enc1 = VGG(in_channels=in_channel)
             self.enc2 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
@@ -2687,7 +2690,7 @@ class Encoder(torch.nn.Module):
         :param ilens:
         :return:
         '''
-        if self.etype in ['blstm','blstmp', 'blstmss','blstmpbn']:
+        if self.etype in ['blstm','blstmp', 'blstmss','blstmpbn','vgg']:
             xs, ilens = self.enc1(xs, ilens)
         elif self.etype in ['vggblstm','vggblstmp','vggbnblstm','vggbnblstmp','vggceilblstm','vggceilblstmp','vggnbblstm','vggnbblstmp', 'vggsjblstm']:
             xs, ilens = self.enc1(xs, ilens)
@@ -3059,6 +3062,64 @@ class VGG(torch.nn.Module):
         xs = pad_list(xs, 0.0)
 
         return xs, ilens
+
+class VGGOnly(torch.nn.Module):
+
+    # default is vgg
+    # VGG:  Vgg()
+    # add Residual connection: (bias=False, resnet=True)
+
+    def __init__(self, idim, eprojs, batch_norm=False, spatial_dp=False, ceil_mode=False, in_channels=1, bias=True, resnet=False):
+        super(VGGOnly, self).__init__()
+
+        # self.conv0 = ConvBasicBlock(in_channels, 16, 1, 1, 0, False, True, batch_norm, spatial_dp)
+        self.resblock1 = CNNBasicBlock(in_channels, 64, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=resnet, bias=bias)
+        self.maxpool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
+
+        self.resblock2 = CNNBasicBlock(64, 128, batch_norm=batch_norm, spatial_dp=spatial_dp, resnet=resnet, bias=bias)
+        self.maxpool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=ceil_mode)
+
+        self.linear = torch.nn.Linear(_get_maxpooling2_odim(idim, in_channel=in_channels), eprojs)
+        self.in_channels = in_channels
+        self.ceil_mode = ceil_mode
+
+    def forward(self, xs, ilens):
+        logging.info(self.__class__.__name__ + ' input lengths: ' + str(ilens))
+
+        # xs: input: utt x frame x dim
+        # xs: output: utt x 1 (input channel num) x frame x dim
+        xs = xs.contiguous().view(xs.size(0), xs.size(1), self.in_channels, xs.size(2) // self.in_channels).transpose(1, 2)
+
+        # xs = self.conv0(xs)
+        xs = self.resblock1(xs)
+        xs = self.maxpool1(xs)
+        xs = self.resblock2(xs)
+        xs = self.maxpool2(xs)
+
+        # change ilens accordingly
+        # in maxpooling layer: stride(2), padding(0), kernel(2)
+        s, p, k = [2,0,2]
+
+        fnc = np.ceil if self.ceil_mode else np.floor
+
+        ilens = np.array(
+            fnc(((np.array(ilens, dtype=np.float32)+2*p-k)/s)+1), dtype=np.int64)
+        ilens = np.array(
+            fnc(((np.array(ilens, dtype=np.float32)+2*p-k)/s)+1), dtype=np.int64).tolist()
+
+        # x: utt_list of frame (remove zeropaded frames) x (input channel num x dim)
+        xs = xs.transpose(1, 2)
+
+        xs = xs.contiguous().view(
+            xs.size(0), xs.size(1), xs.size(2) * xs.size(3))
+
+        xs = linear_tensor(self.linear, xs) # projection to eprojs
+
+        xs = [xs[i, :ilens[i]] for i in range(len(ilens))]
+        xs = pad_list(xs, 0.0)
+
+        return xs, ilens
+
 
 class ResNetOrig(torch.nn.Module):
     # ceil mode is not supported due to conv.
