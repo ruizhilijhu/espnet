@@ -83,10 +83,12 @@ lang_list="vietnamese"
 # multl-encoder multi-band
 numEncStreams=1
 numBands=1
+share_ctc=true
 
 # for decoding only ; only works for multi case
 addGaussNoise=1
 l2weight=0.5
+
 
 . utils/parse_options.sh || exit 1;
 
@@ -211,9 +213,9 @@ fi
 if [ -z ${tag} ]; then
 
     if [[ $opt == "sgd" ]]; then
-        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     else
-        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     fi
     if ${do_delta}; then
         expdir=${expdir}_delta
@@ -261,7 +263,8 @@ if [ ${stage} -le 3 ]; then
         --numEncStreams ${numEncStreams} \
         --numBands ${numBands} \
         --l2weight ${l2weight} \
-        --addGaussNoise ${addGaussNoise}
+        --addGaussNoise ${addGaussNoise} \
+        --shareCtc ${share_ctc}
 fi
 
 
@@ -295,6 +298,7 @@ if [ ${stage} -le 4 ]; then
             --ctc-weight ${ctc_weight} \
             --addGaussNoise ${addGaussNoise} \
             --l2weight ${l2weight} \
+            --shareCtc ${share_ctc} \
             &
         wait
 

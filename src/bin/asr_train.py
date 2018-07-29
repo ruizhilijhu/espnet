@@ -14,6 +14,8 @@ import sys
 
 import numpy as np
 
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -77,7 +79,7 @@ def main():
     parser.add_argument('--numBands', default=1, type=int, help='Number of band streams. Only 2-band [40+3,40+3] case is supported.')
     parser.add_argument('--addGaussNoise', default=0, type=int, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
     parser.add_argument('--l2weight', default=-1, type=float, help='fix l2 att weight for first encoder, then the second will be 1-l2weight, default:-1: no fix weights. for decoding')
-
+    parser.add_argument("--shareCtc", type=str2bool, default=True, help="Activate ctc share mode.")
 
     # loss
     parser.add_argument('--ctc_type', default='warpctc', type=str,

@@ -198,6 +198,7 @@ class E2E(torch.nn.Module):
         self.outdir = args.outdir
         self.mtlalpha = args.mtlalpha
         self.numEncStreams = args.numEncStreams
+        self.shareCtc = args.shareCtc
 
         # below means the last number becomes eos/sos ID
         # note that sos/eos IDs are identical
@@ -207,7 +208,7 @@ class E2E(torch.nn.Module):
         # subsample info
         # +1 means input (+1) and layers outputs (args.elayer)
         subsample = np.ones(args.elayers + 1, dtype=np.int)
-        if args.etype == 'blstmp':
+        if args.etype in ['blstmp']:
             ss = args.subsample.split("_")
             for j in range(min(args.elayers + 1, len(ss))):
                 subsample[j] = int(ss[j])
@@ -228,7 +229,7 @@ class E2E(torch.nn.Module):
         self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
                            self.subsample, args.dropout_rate, addGaussNoise=args.addGaussNoise)
         # ctc
-        self.ctc = CTC(odim, args.eprojs, args.dropout_rate, args.numEncStreams)
+        self.ctc = CTC(odim, args.eprojs, args.dropout_rate, args.numEncStreams, share_ctc=self.shareCtc)
         # attention
         if args.atype == 'noatt':
             self.att = NoAtt()
@@ -398,7 +399,11 @@ class E2E(torch.nn.Module):
 
         # calculate log P(z_t|X) for CTC scores
         if recog_args.ctc_weight > 0.0:
-            lpz = self.ctc.log_softmax(h).data[0]
+            if self.numEncStreams == 1:
+                lpz = self.ctc.log_softmax(h).data[0]
+            else:
+                lpz = [self.ctc.log_softmax(h)[idx].data[0] for idx in range(self.numEncStreams)]
+
         else:
             lpz = None
 
@@ -504,13 +509,20 @@ def chainer_like_ctc_loss(acts, labels, act_lens, label_lens):
 
 
 class CTC(torch.nn.Module):
-    def __init__(self, odim, eprojs, dropout_rate, numEncStreams):
+    def __init__(self, odim, eprojs, dropout_rate, numEncStreams, share_ctc=True):
         super(CTC, self).__init__()
         self.dropout_rate = dropout_rate
         self.loss = None
-        self.ctc_lo = torch.nn.Linear(eprojs, odim)
+
+        if share_ctc:
+            self.ctc_lo = torch.nn.Linear(eprojs, odim)
+        else:
+            for idx in range(numEncStreams):
+                setattr(self, "ctc_lo_%d" % idx, torch.nn.Linear(eprojs, odim))
+
         self.loss_fn = chainer_like_ctc_loss  # CTCLoss()
         self.numEncStreams = numEncStreams
+        self.share_ctc = share_ctc
 
     def forward(self, hpad, ilens, ys):
         '''CTC forward
@@ -550,8 +562,13 @@ class CTC(torch.nn.Module):
                 (x.size(0) for x in ys), dtype=np.int32)))
 
             # zero padding for hs
-            y_hat = [linear_tensor(
-                self.ctc_lo, F.dropout(h, p=self.dropout_rate)) for h in hpad]
+            if self.share_ctc:
+                y_hat = [linear_tensor(self.ctc_lo, F.dropout(h, p=self.dropout_rate)) for idx, h
+                         in enumerate(hpad)]
+            else:
+                y_hat = [linear_tensor(getattr(self, "ctc_lo_%d" % idx), F.dropout(h, p=self.dropout_rate)) for idx, h
+                         in enumerate(hpad)]
+
 
             # zero padding for ys
             y_true = torch.cat(ys).cpu().int()  # batch x olen
@@ -578,7 +595,10 @@ class CTC(torch.nn.Module):
         '''
         if not isinstance(hpad, tuple):
             return F.log_softmax(linear_tensor(self.ctc_lo, hpad), dim=2)
-        return [F.log_softmax(linear_tensor(self.ctc_lo, h), dim=2) for h in hpad]
+        if self.share_ctc:
+            return [F.log_softmax(linear_tensor(self.ctc_lo, h), dim=2) for h in hpad]
+        else:
+            return [F.log_softmax(linear_tensor(getattr(self, "ctc_lo_%d" % idx)), dim=2) for idx, h in enumerate(hpad)]
 
 
 def mask_by_length(xs, length, fill=0):
@@ -1030,7 +1050,7 @@ class MultiEncAttLoc(torch.nn.Module):
         # utt x hdim
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
-        logging.warning(self.__class__.__name__ + ' level two attention weight: ' )
+        # logging.info(self.__class__.__name__ + ' level two attention weight: ' )
         logging.warning(w_l2.data[0])
 
         return c_l2, [w_l1, w_l2]
@@ -1168,7 +1188,7 @@ class MultiEncAttAdd(torch.nn.Module):
         # utt x hdim
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
-        logging.warning(self.__class__.__name__ + ' level two attention weight: ' )
+        logging.info(self.__class__.__name__ + ' level two attention weight: ' )
         logging.warning(w_l2.data[0])
 
         return c_l2, [w_l1, w_l2]
@@ -2190,7 +2210,7 @@ class Decoder(torch.nn.Module):
             else:
                 vy = h[0].new_zeros(1).long()
 
-            max_frame = np.amax([hh.shape[1] for hh in h])
+            max_frame = np.amin([hh.shape[1] for hh in h])
             if recog_args.maxlenratio == 0:
                 maxlen = max_frame
             else:
@@ -2273,7 +2293,7 @@ class Decoder(torch.nn.Module):
             logging.debug('position ' + str(i))
 
             hyps_best_kept = []
-            for hyp in hyps:
+            for d1, hyp in enumerate(hyps):
                 # vy.unsqueeze(1) # not inplace function
                 vy[0] = hyp['yseq'][i]
                 ey = self.embed(vy)           # utt list (1) x zdim
@@ -2304,13 +2324,13 @@ class Decoder(torch.nn.Module):
                         local_att_scores, ctc_beam, dim=1)
 
                     if isinstance(h, tuple):
-                        ctc_scores, ctc_states = zip(*[ctc_prefix_score(
+                        ctc_scores, ctc_states = zip(*[ctc_prefix_score[idx](
                             hyp['yseq'], local_best_ids[0], hyp['ctc_state_prev'][idx]) for idx in range(
                             numEnc)])  # ctc_scores=[score_stream1, score_stream2, ..., score_streamN], ctc_states = [state1, state2, ..., stateN] where stateN is beam x frame
                         local_scores = \
                             (1.0 - ctc_weight) * local_att_scores[:, local_best_ids[0]] \
                             + ctc_weight * torch.from_numpy(
-                                np.mean([ctc_scores[idx] - hyp['ctc_score_prev'][idx] for idx in range(numEnc)]))
+                                np.mean(np.stack([ctc_scores[idx] - hyp['ctc_score_prev'][idx] for idx in range(numEnc)]), axis=0))
                     else:
                         ctc_scores, ctc_states = ctc_prefix_score(
                             hyp['yseq'], local_best_ids[0], hyp['ctc_state_prev'])

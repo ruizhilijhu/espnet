@@ -438,6 +438,10 @@ def recog(args):
         logging.info('reading a model config file from' + args.model_conf)
         idim, odim, train_args = pickle.load(f)
 
+    d_train_args = vars(train_args)
+    if 'shareCtc' not in d_train_args:
+        d_train_args['shareCtc'] = args.shareCtc
+
     for key in sorted(vars(args).keys()):
         logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))
 
