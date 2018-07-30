@@ -208,6 +208,7 @@ class E2E(torch.nn.Module):
         # subsample info
         # +1 means input (+1) and layers outputs (args.elayer)
         subsample = np.ones(args.elayers + 1, dtype=np.int)
+        # if args.etype in ['blstmp', 'blstmpbn', 'multiVggblstmBlstmp', 'multiBandBlstmpBlstmp']:
         if args.etype in ['blstmp']:
             ss = args.subsample.split("_")
             for j in range(min(args.elayers + 1, len(ss))):
@@ -279,7 +280,7 @@ class E2E(torch.nn.Module):
                               args.adim, args.numEncStreams)
         elif args.atype == 'me_attadd_l2w0.5':
             self.att = MultiEncAttAdd(args.eprojs, args.dunits,
-                              args.adim, args.numEncStreams, fixL2Weight=True, l2weight=args.l2weight)
+                              args.adim, args.numEncStreams, fixL2Weight=True, trnL2Weight=0.5, evalL2Weight=args.evalL2Weight)
         elif args.atype == 'me_attadd_l2dp':
             self.att = MultiEncAttAdd(args.eprojs, args.dunits,
                               args.adim, args.numEncStreams, l2Dropout=True)
@@ -891,7 +892,7 @@ class AttLoc(torch.nn.Module):
         return c, w
 
 
-class MultiEncAttLoc(torch.nn.Module):
+class MultiEncAttLoc(torch.nn.Module): # TODO: change it according to MultiEncAttAdd
     '''location-aware attention
 
     :param int eprojs: # projection-units of encoder
@@ -1061,11 +1062,15 @@ class MultiEncAttAdd(torch.nn.Module):
     :param int eprojs: # projection-units of encoder
     :param int dunits: # units of decoder
     :param int att_dim: attention dimension
-    :param int aconv_chans: # channels of attention convolution
-    :param int aconv_filts: filter size of attention convolution
+    :param int numEncStreams: # of encoder stream
+    :param int l2Dropout: flag to apply level-2 dropout
+    :param int fixL2Weight: flag to fix level-2 weight 
+    :param int trnL2Weight: During trainng, fix level-2 weight of the first encoder. [only fixL2Weight=True]    
+    :param int evalL2Weight: During trainng, fix level-2 weight of the first encoder. [only fixL2Weight=True]    
+
     '''
 
-    def __init__(self, eprojs, dunits, att_dim, numEncStreams, l2Dropout=False, fixL2Weight=False, l2weight=-1):
+    def __init__(self, eprojs, dunits, att_dim, numEncStreams, l2Dropout=False, fixL2Weight=False, trnL2Weight=0.5, evalL2Weight=None):
         super(MultiEncAttAdd, self).__init__()
 
         # level 1 attention: one attention mechanism for each stream
@@ -1096,7 +1101,8 @@ class MultiEncAttAdd(torch.nn.Module):
         self.pre_compute_enc_h_l1 = None
         self.pre_compute_enc_h_l2 = None
         self.numEncStreams = numEncStreams
-        self.l2weight = l2weight
+        self.l2Weight = evalL2Weight if evalL2Weight is not None else trnL2Weight #weight for the frist encoder; during training, keep evalL2Weight as None
+        # TODO: only support two encoders here
         self.l2Droupout = l2Dropout
         self.fixL2Weight = fixL2Weight
 
@@ -1142,8 +1148,17 @@ class MultiEncAttAdd(torch.nn.Module):
         # initialize attention weight with uniform dist.
         if att_prev is None:
             att_prev_l1 = None
-            att_prev_l2 = [Variable(enc_hs_pad[0].data.new(
-                self.numEncStreams).zero_() + (1.0 / self.numEncStreams)) for _ in range(batch)]
+
+            if self.fixL2Weight:
+                att_prev_l2 = []
+                w_np = np.array([self.l2Weight, 1 - self.l2Weight]) # hard coded for two encoders
+                for _ in range(batch):
+                    w = Variable(torch.from_numpy(w_np).type(enc_hs_pad[0].data.type()))
+                    att_prev_l2 += [w]
+            else:
+                att_prev_l2 = [Variable(enc_hs_pad[0].data.new(
+                    self.numEncStreams).zero_() + (1.0 / self.numEncStreams)) for _ in range(batch)]
+
             att_prev_l2 = pad_list(att_prev_l2, 0) # utt x frame_max
             att_prev = [att_prev_l1, att_prev_l2] # [[att_l1_1, att_l1_2, ...], att_l2_1]
 
@@ -2190,7 +2205,6 @@ class Decoder(torch.nn.Module):
         # in multi stream case, h is a tuple [utt(1) x frame x hdim], lpz is also a tuple [utt(1) x frame x odim]
         # in one stream case, h is utt(1) x frame x hdim, lpz is utt(1) x frame x odim
         if isinstance(h, tuple):
-            assert len(h) == len(lpz)
             numEnc = len(h)
             logging.info('input lengths: ' + str([h[idx].size(0) for idx in range(numEnc)]))
 

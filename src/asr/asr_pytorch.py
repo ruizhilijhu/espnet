@@ -442,6 +442,8 @@ def recog(args):
     if 'shareCtc' not in d_train_args:
         d_train_args['shareCtc'] = args.shareCtc
 
+    if args.evalL2Weight is not None: d_train_args['evalL2Weight'] = args.evalL2Weight
+
     for key in sorted(vars(args).keys()):
         logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))
 
