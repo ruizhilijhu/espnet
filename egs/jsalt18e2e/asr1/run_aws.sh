@@ -9,8 +9,7 @@
 # Haitian Tamil Kurmanji Tok-Pisin Georgian) as a non-target language.
 # The recipe first build language-independent ASR by using non-target languages
 
-. ./path.sh
-. ./cmd.sh
+. ./path_aws.sh
 
 # general configuration
 backend=pytorch
@@ -87,24 +86,21 @@ share_ctc=true
 # for decoding only ; only works for multi case
 addGaussNoise=false
 evalL2Weight=0.5
-
+gpuid=0
 
 . utils/parse_options.sh || exit 1;
 
-# data set
-[ ! -d data/$train_set ] && echo "Need to generate data/$train_set first!" && exit 1
-[ ! -d data/$train_dev ] && echo "Need to generate data/$train_dev first!" && exit 1
+
+export CUDA_VISIBLE_DEVICES=$gpuid
+
 num_lang=$(echo $lang_list | awk '{print NF}')
 lang=$(echo $lang_list| sed "s@ @-@g")
 
 
-# data directories
-csjdir=../../csj
-libridir=../../librispeech
-babeldir=../../babel
 
-. ./path.sh
-. ./cmd.sh
+. ./path_aws.sh
+
+
 
 # check gpu option usage
 if [ ! -z $gpu ]; then
@@ -117,6 +113,7 @@ if [ ! -z $gpu ]; then
     fi
 fi
 
+
 # Set bash to 'debug' mode, it will exit on :
 # -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',
 set -e
@@ -124,90 +121,16 @@ set -u
 set -o pipefail
 
 
-feat_tr_dir=${dumpdir}/${train_set}_${lang}_${train_set}_${lang}/delta${do_delta}; mkdir -p ${feat_tr_dir}
-feat_dt_dir=${dumpdir}/${train_dev}_${lang}_${train_set}_${lang}/delta${do_delta}; mkdir -p ${feat_dt_dir}
-if [ ${stage} -le 1 ]; then
+feat_tr_dir=${dumpdir}/${train_set}_${lang}_${train_set}_${lang}/delta${do_delta};
+feat_dt_dir=${dumpdir}/${train_dev}_${lang}_${train_set}_${lang}/delta${do_delta};
 
-    for l in $lang_list; do
-        grep $l data/${train_set}/spk2utt | awk '{print $1}' > data/${train_set}/spk_list_${l}
-        grep $l data/${train_dev}/spk2utt | awk '{print $1}' > data/${train_dev}/spk_list_${l}
-        utils/subset_data_dir.sh --spk-list data/${train_set}/spk_list_${l} data/${train_set} data/${train_set}_${l}
-        utils/subset_data_dir.sh --spk-list data/${train_dev}/spk_list_${l} data/${train_dev} data/${train_dev}_${l}
-    done
-
-
-    if [ $num_lang -gt 1 ]; then
-        data_list=$(echo $lang_list | awk -v dir=$train_set '{for(i=1;i<=NF;i++){ printf "data/%s_%s ",dir,$i} }')
-        utils/combine_data.sh data/${train_set}_${lang}_orig $data_list
-        data_list=$(echo $lang_list | awk -v dir=$train_dev '{for(i=1;i<=NF;i++){ printf "data/%s_%s ",dir,$i} }')
-        utils/combine_data.sh data/${train_dev}_${lang}_orig $data_list
-    else
-        utils/copy_data_dir.sh data/${train_set}_${lang} data/${train_set}_${lang}_orig
-        utils/copy_data_dir.sh data/${train_dev}_${lang} data/${train_dev}_${lang}_orig
-
-    fi
-
-    # remove utt having more than 3000 frames or less than 10 frames or
-    # remove utt having more than 400 characters or no more than 0 characters
-    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_${lang}_orig data/${train_set}_${lang}
-    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_${lang}_orig data/${train_dev}_${lang}
-
-    # compute global CMVN
-    compute-cmvn-stats scp:data/${train_set}_${lang}/feats.scp data/${train_set}_${lang}/cmvn.ark
-
-    # dump features for training
-    if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
-    utils/create_split_dir.pl \
-        /export/b{01,02,03,04}/${USER}/espnet-data/egs/jsalt18e2e/asr1/dump/${train_set}_${lang}/delta${do_delta}/storage \
-        ${feat_tr_dir}/storage
-    fi
-    if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
-    utils/create_split_dir.pl \
-        /export/b{01,02,03,04}/${USER}/espnet-data/egs/jsalt18e2e/asr1/dump/${train_dev}_${lang}/delta${do_delta}/storage \
-        ${feat_dt_dir}/storage
-    fi
-    [ ! -d ${feat_tr_dir}/feats.scp ] && dump.sh --cmd "$train_cmd" --nj 40 --do_delta $do_delta \
-        data/${train_set}_${lang}/feats.scp data/${train_set}_${lang}/cmvn.ark exp/dump_feats/${train_set}_${lang}_${train_set}_${lang} ${feat_tr_dir}
-    [ ! -d ${feat_dt_dir}/feats.scp ] && dump.sh --cmd "$train_cmd" --nj 40 --do_delta $do_delta \
-        data/${train_dev}_${lang}/feats.scp data/${train_set}_${lang}/cmvn.ark exp/dump_feats/${train_dev}_${lang}_${train_set}_${lang} ${feat_dt_dir}
-   for rtask in ${recog_set}; do
-        feat_recog_dir=${dumpdir}/${rtask}_${train_set}_${lang}/delta${do_delta}; mkdir -p ${feat_recog_dir}
-        [ ! -d ${feat_recog_dir}/feats.scp ] && dump.sh --cmd "$train_cmd" --nj 40 --do_delta $do_delta \
-            data/${rtask}/feats.scp data/${train_set}_${lang}/cmvn.ark exp/dump_feats/recog/${rtask}_${train_set}_${lang} \
-            ${feat_recog_dir}
-    done
-fi
 train_set=${train_set}_${lang}
 train_dev=${train_dev}_${lang}
 dict=data/lang_1char/train_units.txt
 nlsyms=data/lang_1char/non_lang_syms.txt
 
 echo "dictionary: ${dict}"
-if [ ${stage} -le 2 ]; then
-    ### Task dependent. You have to check non-linguistic symbols used in the corpus.
-    echo "stage 2: Dictionary and Json Data Preparation"
-    mkdir -p data/lang_1char/
 
-    echo "make a non-linguistic symbol list for all languages"
-    cut -f 2- data/tr_*/text | grep -o -P '\[.*?\]|\<.*?\>' | sort | uniq > ${nlsyms}
-    cat ${nlsyms}
-
-    echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
-    cat data/tr_*/text | text2token.py -s 1 -n 1 -l ${nlsyms} | cut -f 2- -d" " | tr " " "\n" \
-    | sort | uniq | grep -v -e '^\s*$' | awk '{print $0 " " NR+1}' >> ${dict}
-    wc -l ${dict}
-
-    # make json labels
-    data2json.sh --feat ${feat_tr_dir}/feats.scp --nlsyms ${nlsyms} \
-         data/${train_set} ${dict} > ${feat_tr_dir}/data.json
-    data2json.sh --feat ${feat_dt_dir}/feats.scp --nlsyms ${nlsyms} \
-         data/${train_dev} ${dict} > ${feat_dt_dir}/data.json
-    for rtask in ${recog_set}; do
-        feat_recog_dir=${dumpdir}/${rtask}_${train_set}/delta${do_delta}
-        data2json.sh --feat ${feat_recog_dir}/feats.scp \
-            --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
-    done
-fi
 
 if [ -z ${tag} ]; then
 
@@ -226,8 +149,7 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 3 ]; then
     echo "stage 3: Network Training"
-    ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
-        asr_train.py \
+    python ../../../src/bin/asr_train.py \
         --ngpu ${ngpu} \
         --backend ${backend} \
         --outdir ${expdir}/results \
@@ -260,9 +182,11 @@ if [ ${stage} -le 3 ]; then
         --mom ${mom} \
         --wd ${wd} \
         --numEncStreams ${numEncStreams} \
-        --shareCtc ${share_ctc}
+        --shareCtc ${share_ctc} 2>&1 | tee ${expdir}/train.log
 fi
 
+
+exit 0
 
 if [ ${stage} -le 4 ]; then
     echo "stage 4: Decoding"

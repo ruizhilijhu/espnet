@@ -271,7 +271,7 @@ class E2E(torch.nn.Module):
                               args.adim, args.aconv_chans, args.aconv_filts, args.numEncStreams)
         elif args.atype == 'me_loc_l2w0.5':
             self.att = MultiEncAttLoc(args.eprojs, args.dunits,
-                              args.adim, args.aconv_chans, args.aconv_filts, args.numEncStreams, fixL2Weight=True, l2weight=args.l2weight)
+                              args.adim, args.aconv_chans, args.aconv_filts, args.numEncStreams, fixL2Weight=True, evalL2Weight=args.evalL2Weight)
         elif args.atype == 'me_loc_l2dp':
             self.att = MultiEncAttLoc(args.eprojs, args.dunits,
                               args.adim, args.aconv_chans, args.aconv_filts, args.numEncStreams, l2Dropout=True)
@@ -599,7 +599,7 @@ class CTC(torch.nn.Module):
         if self.share_ctc:
             return [F.log_softmax(linear_tensor(self.ctc_lo, h), dim=2) for h in hpad]
         else:
-            return [F.log_softmax(linear_tensor(getattr(self, "ctc_lo_%d" % idx)), dim=2) for idx, h in enumerate(hpad)]
+            return [F.log_softmax(linear_tensor(getattr(self, "ctc_lo_%d" % idx), h), dim=2) for idx, h in enumerate(hpad)]
 
 
 def mask_by_length(xs, length, fill=0):
@@ -2750,16 +2750,15 @@ class Encoder(torch.nn.Module):
         elif self.etype in ['multiVggblstmBlstmp']:
 
 
-            # if self.addGaussNoise == 1: # TODO only on gpu
+            # if self.addGaussNoise:    # TODO only on gpu
+            #
             #     # add noise to stream 1
             #     torch.normal(mean=torch.arange(1, 11), std=torch.arange(1, 0, -0.1))
             #     noise = np.random.normal(loc=mean, scale=stddev, size=np.shape(input_array))
             #     output_tensor = torch.from_numpy(out)
-            # elif self.addGaussNoise == 2:
-            #     # add noise to stream 2
             #
-            #
-
+            #     noise =
+            #     xs:
 
             xs1, ilens1 = self.enc11(xs, ilens)
             xs1, ilens1 = self.enc12(xs1, ilens1)

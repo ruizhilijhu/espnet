@@ -76,9 +76,10 @@ def main():
 
     # multi-encoder, multi-band
     parser.add_argument('--numEncStreams', default=1, type=int, help='Number of encoder streams.')
-    parser.add_argument('--numBands', default=1, type=int, help='Number of band streams. Only 2-band [40+3,40+3] case is supported.')
-    parser.add_argument('--addGaussNoise', default=0, type=int, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
     parser.add_argument("--shareCtc", type=str2bool, default=True, help="Activate ctc share mode.")
+    # for decoding only
+    parser.add_argument('--addGaussNoise', default=False, type=str2bool, help='Add Gaussian Noise (mean=0, var=1) to first stream. for decoding only')
+    parser.add_argument('--evalL2Weight', default=None, type=float, help='fix l2 att weight for first encoder, then the second will be 1-evalL2Weight, default:None')
 
     # loss
     parser.add_argument('--ctc_type', default='warpctc', type=str,
