@@ -92,10 +92,17 @@ recog_set="dt_babel_cantonese dt_babel_bengali dt_babel_pashto dt_babel_turkish 
 # dt_csj_japanese et_csj_japanese_1 et_csj_japanese_2 et_csj_japanese_3\
 # dt_libri_english_clean dt_libri_english_other et_libri_english_clean et_libri_english_other"
 
+# multl-encoder multi-band
+num_enc=1
+share_ctc=true
+
+# for decoding only ; only works for multi case
+l2_weight=0.5
+
 # subset options
 # select the number of speakers for subset training experiments. (e.g. 1000; select 1000 speakers). Default: select the whole train set.
 subset_num_spk=""
-numEncStreams=1
+
 
 . utils/parse_options.sh || exit 1;
 
@@ -255,9 +262,9 @@ fi
 if [ -z ${tag} ]; then
 
     if [[ $opt == "sgd" ]]; then
-        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     else
-        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+        expdir=exp/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     fi
     if ${do_delta}; then
         expdir=${expdir}_delta
@@ -302,7 +309,8 @@ if [ ${stage} -le 3 ]; then
         --lr_decay ${lr_decay} \
         --mom ${mom} \
         --wd ${wd} \
-        --numEncStreams ${numEncStreams}
+        --num-enc ${num_enc} \
+        --share-ctc ${share_ctc}
 fi
 
 
@@ -312,7 +320,7 @@ if [ ${stage} -le 4 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_l2w${l2_weight}
         feat_recog_dir=${dumpdir}/${rtask}_${train_set}/delta${do_delta}
 
         # split data
@@ -334,6 +342,7 @@ if [ ${stage} -le 4 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
+            --l2-weight ${l2_weight} \
             &
         wait
 

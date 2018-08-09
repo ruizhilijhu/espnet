@@ -439,10 +439,11 @@ def recog(args):
         idim, odim, train_args = pickle.load(f)
 
     d_train_args = vars(train_args)
-    if 'shareCtc' not in d_train_args:
-        d_train_args['shareCtc'] = args.shareCtc
+    # to be compatible with old script where shareCtc is not in train_args
+    if 'share_ctc' not in d_train_args: d_train_args['share_ctc'] = args.share_ctc
 
-    if args.evalL2Weight is not None: d_train_args['evalL2Weight'] = args.evalL2Weight
+    # for add decoding options differernt from training
+    if 'l2_weight' not in d_train_args: d_train_args['l2_weight'] = args.l2_weight
 
     for key in sorted(vars(args).keys()):
         logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))

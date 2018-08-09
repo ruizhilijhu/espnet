@@ -71,10 +71,9 @@ def main():
     parser.add_argument('--lm-weight', default=0.1, type=float,
                         help='RNNLM weight.')
     # multiencoder multibands
-    parser.add_argument('--addGaussNoise', default=False, type=str2bool, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
-    parser.add_argument('--evalL2Weight', default=None, type=float, help='fix l2 att weight for first encoder, then the second will be 1-evalL2Weight, default:None')
-    parser.add_argument("--shareCtc", type=str2bool, default=True, help="Activate ctc share mode.")
-
+    # decode
+    # parser.add_argument('--add-gauss-noise', default=False, type=str2bool, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
+    parser.add_argument('--l2-weight', default=None, type=float, help='fix l2 att weight for first encoder, then the second will be 1-eval-l2-weight, default:None')
 
     args = parser.parse_args()
 

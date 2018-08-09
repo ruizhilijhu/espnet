@@ -81,12 +81,11 @@ recog_set="dt_babel_vietnamese"
 lang_list="vietnamese"
 
 # multl-encoder multi-band
-numEncStreams=1
+num_enc=1
 share_ctc=true
 
 # for decoding only ; only works for multi case
-addGaussNoise=false
-evalL2Weight=0.5
+l2_weight=0.5
 
 
 . utils/parse_options.sh || exit 1;
@@ -259,8 +258,8 @@ if [ ${stage} -le 3 ]; then
         --lr_decay ${lr_decay} \
         --mom ${mom} \
         --wd ${wd} \
-        --numEncStreams ${numEncStreams} \
-        --shareCtc ${share_ctc}
+        --num-enc ${num_enc} \
+        --share-ctc ${share_ctc}
 fi
 
 
@@ -270,7 +269,7 @@ if [ ${stage} -le 4 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_evalL2Weight${evalL2Weight}_addGaussNoise${addGaussNoise}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_l2w${l2_weight}
         feat_recog_dir=${dumpdir}/${rtask}_${train_set}/delta${do_delta}
 
         # split data
@@ -292,9 +291,7 @@ if [ ${stage} -le 4 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
-            --addGaussNoise ${addGaussNoise} \
-            --evalL2Weight ${evalL2Weight} \
-            --shareCtc ${share_ctc} \
+            --l2-weight ${l2_weight} \
             &
         wait
 

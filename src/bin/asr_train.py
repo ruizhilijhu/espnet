@@ -75,11 +75,9 @@ def main():
                              'every y frame at 2nd layer etc.')
 
     # multi-encoder, multi-band
-    parser.add_argument('--numEncStreams', default=1, type=int, help='Number of encoder streams.')
-    parser.add_argument("--shareCtc", type=str2bool, default=True, help="Activate ctc share mode.")
-    # for decoding only
-    parser.add_argument('--addGaussNoise', default=False, type=str2bool, help='Add Gaussian Noise (mean=0, var=1) to first stream. for decoding only')
-    parser.add_argument('--evalL2Weight', default=None, type=float, help='fix l2 att weight for first encoder, then the second will be 1-evalL2Weight, default:None')
+    # train
+    parser.add_argument('--num-enc', default=1, type=int, help='Number of encoder streams.')
+    parser.add_argument("--share-ctc", type=str2bool, default=True, help="Activate ctc share mode.")
 
     # loss
     parser.add_argument('--ctc_type', default='warpctc', type=str,
@@ -90,7 +88,7 @@ def main():
                         choices=['noatt', 'dot', 'add', 'location', 'coverage',
                                  'coverage_location', 'location2d', 'location_recurrent',
                                  'multi_head_dot', 'multi_head_add', 'multi_head_loc',
-                                 'multi_head_multi_res_loc', 'me_loc','me_loc_l2w0.5','me_loc_l2dp','me_attadd','me_attadd_l2w0.5','me_attadd_l2dp',],
+                                 'multi_head_multi_res_loc', 'enc2_add_l2w0.5','enc2_add_l2dp','enc2_add',],
                         help='Type of attention architecture')
     parser.add_argument('--adim', default=320, type=int,
                         help='Number of attention transformation dimensions')
