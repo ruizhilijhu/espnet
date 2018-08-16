@@ -279,7 +279,7 @@ class E2E(torch.nn.Module):
             self.att = Enc2AttAdd(args.eprojs, args.dunits,
                               args.adim, num_enc=args.num_enc)
         elif args.atype == 'enc2_add_l2w0.5':
-            if 'l2_weight' not in  vars(args): # training stage
+            if 'l2_weight' not in vars(args): # training stage
                 self.att = Enc2AttAdd(args.eprojs, args.dunits,
                                       args.adim, num_enc=args.num_enc, l2_weight=0.5, l2_dropout=False)
             else: # decoding stage
@@ -288,6 +288,20 @@ class E2E(torch.nn.Module):
         elif args.atype == 'enc2_add_l2dp':
             self.att = Enc2AttAdd(args.eprojs, args.dunits,
                               args.adim, num_enc=args.num_enc, l2_dropout=True)
+
+        elif args.atype == 'enc2_add_linproj':
+            self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
+                                  args.adim, num_enc=args.num_enc, l2_dropout=False, l2_weight=0.5, apply_tanh=False)
+        elif args.atype == 'enc2_add_linprojtanh':
+            self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
+                                  args.adim, num_enc=args.num_enc, l2_dropout=False, l2_weight=0.5, apply_tanh=True)
+        elif args.atype == 'enc2_add_addlinproj':
+            self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
+                                  args.adim, num_enc=args.num_enc, l2_dropout=False, l2_weight=None, apply_tanh=False)
+        elif args.atype == 'enc2_add_addlinprojtanh':
+            self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
+                                  args.adim, num_enc=args.num_enc, l2_dropout=False, l2_weight=None, apply_tanh=True)
+
         else:
             logging.error(
                 "Error: need to specify an appropriate attention archtecture")
@@ -1136,7 +1150,7 @@ class Enc2AttAdd(torch.nn.Module):
         :param float scaling: scaling parameter before applying softmax
         :return: attentioin weighted encoder state (B, D_enc)
         :rtype: Variable
-        :return: list of previous attentioin weights list(B x T_max)
+        :return: list of previous attentioin weights [list(B x T_max), B x T_max] --> l1 and l2
         :rtype: Variable
         '''
 
@@ -1213,6 +1227,169 @@ class Enc2AttAdd(torch.nn.Module):
         # utt x hdim
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
+        logging.info(self.__class__.__name__ + ' level two attention weight: ' )
+        logging.warning(w_l2.data[0][0]) # print the l2-weight for the first stream
+
+        return c_l2, [w_l1, w_l2]
+
+
+class Enc2AttAddLinProj(torch.nn.Module):
+    '''context vector level fusion with 2 encoder streams
+    level-1 (stream level): H1=AddAttention1, H2=AddAttention2
+    level-2 (fusion level): H=[RELU*](W*concat([a1]*H1+[a2]*H2))
+        RELU is optional, [a1,a2] is optional
+    
+    :param int eprojs: # projection-units of encoder
+    :param int dunits: # units of decoder
+    :param int att_dim: attention dimension
+    :param int num_enc: # of encoder stream
+    :param int l2_dropout: flag to apply level-2 dropout
+    :param int l2_weight: fix the first encoder with l2_weight, second one has 1-l2_weight. default: None, do adaptive l2_weight learning. 
+    '''
+    # __init__ will define the architecture of the attention model
+    # chnage the l2Weight when recog
+    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=False, l2_weight=None, apply_tanh=False):
+        super(Enc2AttAddLinProj, self).__init__()
+
+        # level 1 attention: one attention mechanism for each stream
+
+        for idx in range(num_enc):
+            setattr(self, "mlp_enc%d_l1" % idx, torch.nn.Linear(eprojs, att_dim))
+            setattr(self, "mlp_dec%d_l1" % idx, torch.nn.Linear(dunits, att_dim, bias=False))
+            setattr(self, "gvec%d_l1" % idx, torch.nn.Linear(att_dim, 1))
+
+        self.proj = torch.nn.Linear(num_enc*eprojs, eprojs) # TODO: more projection layer
+
+        if l2_weight is None: # fixed l2 weight
+            # level 2 attention: one attention mechanism for stream selection
+            self.mlp_enc_l2 = torch.nn.Linear(eprojs, att_dim)
+            self.mlp_dec_l2 = torch.nn.Linear(dunits, att_dim, bias=False)
+            self.gvec_l2 = torch.nn.Linear(att_dim, 1)
+
+        if l2_dropout:
+            self.dropout_l2 = torch.nn.Dropout2d(p=0.5)
+
+        if apply_tanh:
+            self.tanh = torch.nn.Tanh()
+
+        self.dunits = dunits
+        self.eprojs = eprojs
+        self.att_dim = att_dim
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+        self.num_enc = num_enc
+        self.l2_weight = l2_weight
+        self.l2_dropout = l2_dropout
+        self.apply_tanh = apply_tanh
+
+    def reset(self):
+        '''reset states'''
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+
+    def forward(self, enc_hs_pad, enc_hs_len, dec_z, att_prev, scaling=2.0):
+        '''Enc2AttAddLinProj forward
+
+        :param Variable enc_hs_pad: list of padded encoder hidden state (list(B x T_max x D_enc))
+        :param list enc_h_len: list of padded encoder hidden state lenght list((B))
+        :param Variable dec_z: docoder hidden state (B x D_dec)
+        :param Variable att_prev: list of previous attetion weight list(B x T_max)
+        :param float scaling: scaling parameter before applying softmax
+        :return: attentioin weighted encoder state (B, D_enc)
+        :rtype: Variable
+        :return: list of previous attentioin weights [list(B x T_max), B x T_max] --> l1 and l2
+        :rtype: Variable
+        '''
+
+        # level 1 attention
+        batch = len(enc_hs_pad[0])
+        # assert enc_hs_pad[0].data.size()[1] == enc_hs_pad[1].data.size()[1] # enc1_t_max == enc2_t_max
+        # t_max = enc_hs_pad[1].data.size()[1]
+
+        # pre-compute all h outside the decoder loop
+
+        if self.pre_compute_enc_h_l1 is None:
+            self.enc_h_l1 = enc_hs_pad  # list (utt x frame x hdim)
+            self.h_length_l1 = [self.enc_h_l1[idx].size(1) for idx in range(self.num_enc)]
+            # utt x frame x att_dim
+            self.pre_compute_enc_h_l1 = [linear_tensor(getattr(self, "mlp_enc%d_l1" % idx), self.enc_h_l1[idx]) for idx in range(self.num_enc)]
+
+        if dec_z is None:
+            dec_z = Variable(enc_hs_pad.data.new(batch, self.dunits).zero_())
+        else:
+            dec_z = dec_z.view(batch, self.dunits)
+
+        # initialize attention weight with uniform dist.
+        if att_prev is None:
+            att_prev_l1 = None
+
+            if self.l2_weight is None:
+                att_prev_l2 = [Variable(enc_hs_pad[0].data.new(
+                    self.num_enc).zero_() + (1.0 / self.num_enc)) for _ in range(batch)]
+            else: # fixed l2 weight
+                att_prev_l2 = []
+                w_np = np.array([self.l2_weight, 1 - self.l2_weight]) # hard coded for two encoders
+                for _ in range(batch):
+                    w = Variable(torch.from_numpy(w_np).type(enc_hs_pad[0].data.type()))
+                    att_prev_l2 += [w]
+
+            att_prev_l2 = pad_list(att_prev_l2, 0) # utt x frame_max
+            att_prev = [att_prev_l1, att_prev_l2] # [[att_l1_1, att_l1_2, ...], att_l2_1]
+
+        # dec_z_tiled: utt x frame x att_dim
+        dec_z_tiled_l1 = [getattr(self, "mlp_dec%d_l1" % idx)(dec_z).view(batch, 1, self.att_dim) for idx in range(self.num_enc)]
+
+        # dot with gvec
+        # list(utt x frame x att_dim) -> list(utt x frame)
+        # NOTE consider zero padding when compute w.
+        e_l1 = [linear_tensor(getattr(self, "gvec%d_l1" % idx), torch.tanh(
+             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
+        w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.num_enc)]
+
+        # weighted sum over flames
+        # list (utt x hdim)
+        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        self.enc_h_l2 = [torch.matmul(w_l1[idx].unsqueeze(1), self.enc_h_l1[idx]).squeeze(1) for idx in range(self.num_enc)]
+        self.enc_h_l2 = torch.stack(self.enc_h_l2, dim=1)  # utt x numEncStream x hdim
+
+        if self.l2_dropout: # TODO: (0,0) situation
+            self.enc_h_l2 = self.dropout_l2(self.enc_h_l2.unsqueeze(3)).squeeze(3)
+
+        # level 2 attention
+        if self.l2_weight is None:
+            self.h_length_l2 = self.num_enc
+            self.pre_compute_enc_h_l2 = linear_tensor(self.mlp_enc_l2, self.enc_h_l2)
+
+            # dec_z_tiled: utt x frame x att_dim
+            dec_z_tiled_l2 = self.mlp_dec_l2(dec_z).view(batch, 1, self.att_dim)
+
+            # dot with gvec
+            # utt x frame x att_dim -> utt x frame
+            # NOTE consider zero padding when compute w.
+            e_l2 = linear_tensor(self.gvec_l2, torch.tanh(
+                 self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
+            w_l2 = F.softmax(scaling * e_l2, dim=1)
+        else: # fixed l2 weight
+            w_l2 = att_prev[1]
+
+
+        # w_l2: utt x numEnc
+        # enc_h_l2:  utt x numEnc x hdim
+        w_l2_tile = w_l2.unsqueeze(2).expand(-1, self.num_enc, self.eprojs) # utt x num_enc x T_max
+        self.enc_h_l2 = w_l2_tile * self.enc_h_l2 # utt x num_enc x T_max
+        # utt x hdim
+        c_l2 = linear_tensor(self.proj, self.enc_h_l2.view(batch, -1))
+
+        if self.apply_tanh: c_l2 = self.tanh(c_l2)
+
         logging.info(self.__class__.__name__ + ' level two attention weight: ' )
         logging.warning(w_l2.data[0][0]) # print the l2-weight for the first stream
 
@@ -2521,7 +2698,7 @@ class Decoder(torch.nn.Module):
                 att_ws_sorted_by_head += [att_ws_head]
             att_ws = torch.stack(att_ws_sorted_by_head, dim=1).data.cpu().numpy()
         # elif isinstance(self.att, (Enc2AttAdd, Enc2AttLoc)):
-        elif isinstance(self.att, Enc2AttAdd):
+        elif isinstance(self.att, Enc2AttAdd, Enc2AttAddLinProj):
             # att_ws => list(len(odim)) of [[att1_l1, att2_l1, ...,attN, l1], att_l2]; N: numstreams
             # list of [utt x (NumEnc+1) x T_max]
             att_ws = [pad_list([a.transpose(0, 1) for a in aw[0]+ [aw[1]]], 0).transpose(0, 2).transpose(1, 2) for aw in att_ws]
