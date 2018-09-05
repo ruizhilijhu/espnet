@@ -60,9 +60,9 @@ def main():
     # encoder
     parser.add_argument('--etype', default='blstmp', type=str,
                         choices=['blstm', 'blstmp', 'blstmss', 'blstmpbn',
-                                 'vgg', 'vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
+                                 'vgg', 'vggblstm', 'vgg8blstm','vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
                                  'resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp', 'resnbblstm', 'resnbblstmp','resorigblstm',
-                                 'multiVggblstmBlstmp','multiBandBlstmpBlstmp'],
+                                 'multiVggblstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','vggresblstm', 'vggdil2blstm', 'vggresdil2blstm','multiBlstmpBlstmp4','multiVggdil2blstmBlstmp','rcnn','rcnnNObn','rcnnDp','rcnnDpNObn','multiVgg8blstmBlstmp'],
                         help='Type of encoder network architecture')
     parser.add_argument('--elayers', default=4, type=int,
                         help='Number of encoder layers')
@@ -89,7 +89,11 @@ def main():
                                  'coverage_location', 'location2d', 'location_recurrent',
                                  'multi_head_dot', 'multi_head_add', 'multi_head_loc',
                                  'multi_head_multi_res_loc', 'enc2_add_l2w0.5','enc2_add_l2dp','enc2_add',
-                                 'enc2_add_linproj','enc2_add_linprojtanh','enc2_add_addlinproj','enc2_add_addlinprojtanh'],
+                                 'enc2_add_linproj','enc2_add_linprojtanh','enc2_add_addlinproj','enc2_add_addlinprojtanh',
+                                 'enc2_none_frmaddlinproj', 'enc2_none_frmaddlinprojtanh',
+                                 'enc2_none_frmaddaddlinprojtanh',
+                                 'enc2_add_frmaddlinproj', 'enc2_add_frmaddlinprojtanh', 'enc2_add_frmaddaddlinprojtanh'
+                                 ],
                         help='Type of attention architecture')
     parser.add_argument('--adim', default=320, type=int,
                         help='Number of attention transformation dimensions')
