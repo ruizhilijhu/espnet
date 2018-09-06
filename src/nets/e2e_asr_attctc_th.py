@@ -428,8 +428,6 @@ class E2E(torch.nn.Module):
             loss_ctc = None
         else:
             loss_ctc = self.ctc(hpad, hlens, ys)
-            if loss_ctc > 10000:
-                print
 
         # 4. attention loss
         if self.mtlalpha == 1:
@@ -545,16 +543,17 @@ class _ChainerLikeCTC(warp_ctc._CTC):
         grads = torch.zeros(acts.size()).type_as(acts)
         minibatch_size = acts.size(1)
         costs = torch.zeros(minibatch_size).cpu()
-        loss_func(acts,grads,labels,label_lens,act_lens,minibatch_size,costs)
-        # if torch.sum(costs) > 100000000:
-        #     print
-        # print (costs)
-        # print (act_lens)
-        # print (label_lens)
-        # modified only here from original
+        loss_func(acts,
+                  grads,
+                  labels,
+                  label_lens,
+                  act_lens,
+                  minibatch_size,
+                  costs)
         costs = torch.FloatTensor([costs.sum()]) / acts.size(1)
 
         # debug :
+        # issue: inf cost reported when using rcnn with ctc. No sure why yet
 # import warpctc_pytorch as warp_ctc
 # import torch
 # import numpy as np
@@ -631,8 +630,6 @@ class CTC(torch.nn.Module):
             # expected shape of seqLength x batchSize x alphabet_size
             y_hat = y_hat.transpose(0, 1)
             self.loss = to_cuda(self, self.loss_fn(y_hat, y_true, ilens, olens))
-            if self.loss.data[0] > 10000:
-                print
             logging.info('ctc loss:' + str(self.loss.data[0]))
         else: # multi-encoder case
             assert len(hpad) == len(ilens)
