@@ -237,7 +237,7 @@ class E2E(torch.nn.Module):
         # subsample info
         # +1 means input (+1) and layers outputs (args.elayer)
         subsample = np.ones(args.elayers + 1, dtype=np.int)
-        if args.etype in ['blstmp', 'blstmpbn', 'multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','multiVgg8blstmBlstmp']:
+        if args.etype in ['blstmp', 'blstmpbn', 'multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','multiVgg8blstmBlstmp','amiCH1BlstmpCH2Blstmp','amiCH1Blstmp', 'amiCH2Blstmp']:
         # if args.etype in ['blstmp']:
             ss = args.subsample.split("_")
             for j in range(min(args.elayers + 1, len(ss))):
@@ -545,15 +545,25 @@ class _ChainerLikeCTC(warp_ctc._CTC):
         grads = torch.zeros(acts.size()).type_as(acts)
         minibatch_size = acts.size(1)
         costs = torch.zeros(minibatch_size).cpu()
-        loss_func(acts,
-                  grads,
-                  labels,
-                  label_lens,
-                  act_lens,
-                  minibatch_size,
-                  costs)
+        loss_func(acts,grads,labels,label_lens,act_lens,minibatch_size,costs)
+        # if torch.sum(costs) > 100000000:
+        #     print
+        # print (costs)
+        # print (act_lens)
+        # print (label_lens)
         # modified only here from original
         costs = torch.FloatTensor([costs.sum()]) / acts.size(1)
+
+        # debug :
+# import warpctc_pytorch as warp_ctc
+# import torch
+# import numpy as np
+# g1=np.load('g1.npy');ll1=np.load('ll1.npy');al1=np.load('al1.npy');l1=np.load('l1.npy');a1=np.load('a1.npy');c1=np.load('c1.npy')
+# g1 = torch.from_numpy(g1);
+# al1 = torch.from_numpy(al1);
+# a1 = torch.from_numpy(a1);ll1 = torch.from_numpy(ll1);l1 = torch.from_numpy(l1);c1 = torch.from_numpy(c1)
+# warp_ctc.cpu_ctc(a1, g1, l1, ll1, al1, 1, c1)
+
         ctx.grads = Variable(grads)
         ctx.grads /= ctx.grads.size(1)
 
@@ -621,6 +631,8 @@ class CTC(torch.nn.Module):
             # expected shape of seqLength x batchSize x alphabet_size
             y_hat = y_hat.transpose(0, 1)
             self.loss = to_cuda(self, self.loss_fn(y_hat, y_true, ilens, olens))
+            if self.loss.data[0] > 10000:
+                print
             logging.info('ctc loss:' + str(self.loss.data[0]))
         else: # multi-encoder case
             assert len(hpad) == len(ilens)
@@ -3236,6 +3248,42 @@ class Encoder(torch.nn.Module):
             self.enc1 = BLSTMP(43, elayers, eunits,
                                eprojs, subsample, dropout) # 40+3 pitch
             logging.info('High-Band: BLSTMP(40HF+3Pitch) for encoders')
+
+        # ami
+        elif etype == 'amiCH1BlstmpCH2Blstmp':
+            self.enc1 = BLSTMP(83, elayers, eunits,
+                               eprojs, subsample, dropout)  # 40+3 pitch
+
+            self.enc2 = BLSTMP(83, elayers, eunits,
+                               eprojs, subsample, dropout)
+            logging.info('AMI: BLSTMP(CH1), BLSTMP(CH2) for encoders')
+        elif etype == 'amiCH1Blstmp':
+            self.enc1 = BLSTMP(83, elayers, eunits,
+                               eprojs, subsample, dropout)
+            logging.info('AMI: BLSTMP(CH1) for encoders')
+        elif etype == 'amiCH2Blstmp':
+            self.enc1 = BLSTMP(83, elayers, eunits,
+                               eprojs, subsample, dropout)
+            logging.info('AMI: BLSTMP(CH2) for encoders')
+
+        elif etype == 'amiCH1VgglstmCH2Vgglstm':
+            self.enc11 = VGG(in_channels=in_channel)
+            self.enc12 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            self.enc21 = VGG(in_channels=in_channel)
+            self.enc22 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('AMI: VGGBLSTM(CH1), VGGBLSTM(CH2) for encoders')
+        elif etype == 'amiCH1Vgglstm':
+            self.enc11 = VGG(in_channels=in_channel)
+            self.enc12 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('AMI: VGGBLSTM(CH1) for encoders')
+        elif etype == 'amiCH2Vgglstm':
+            self.enc21 = VGG(in_channels=in_channel)
+            self.enc22 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
+                              elayers, eunits, eprojs, dropout)
+            logging.info('AMI: VGGBLSTM(CH2) for encoders')
         else:
             logging.error(
                 "Error: need to specify an appropriate encoder archtecture")
@@ -3298,6 +3346,49 @@ class Encoder(torch.nn.Module):
             dims1 = list(range(40))+list(range(80,83)) # low frequency + 3 pitch
             xs1, ilens1 = self.enc1(xs[:,:,dims1], ilens)
             return xs1, ilens1
+        elif self.etype in ['amiCH1BlstmpCH2Blstmp']:
+            # xs: utt x frame x dim(83)
+            dims1 = list(range(83)) # low frequency + 3 pitch
+            dims2 = list(range(83,83*2)) # high frequency + 3 pitch
+            xs1, ilens1 = self.enc1(xs[:,:,dims1], ilens)
+            xs2, ilens2 = self.enc2(xs[:,:,dims2], ilens)
+            return (xs1, xs2), (ilens1, ilens2)
+        elif self.etype in ['amiCH1Blstmp']:
+            # xs: utt x frame x dim(83)
+            dims1 = list(range(83)) # high frequency + 3 pitch
+            xs1, ilens1 = self.enc1(xs[:,:,dims1], ilens)
+            return xs1, ilens1
+        elif self.etype in ['amiCH2Blstmp']:
+            # xs: utt x frame x dim(83)
+            dims2 = list(range(83,83*2)) # low frequency + 3 pitch
+            xs2, ilens2 = self.enc1(xs[:,:,dims2], ilens)
+            return xs2, ilens2
+
+        elif self.etype in ['amiCH1VggblstmCH2Vggblstm']:
+            # xs: utt x frame x dim(83)
+            dims1 = list(range(83)) # low frequency + 3 pitch
+            dims2 = list(range(83,83*2)) # high frequency + 3 pitch
+
+            xs1, ilens1 = self.enc11(xs[:,:,dims1], ilens)
+            xs1, ilens1 = self.enc12(xs1, ilens1)
+
+            xs2, ilens2 = self.enc21(xs[:,:,dims2], ilens)
+            xs2, ilens2 = self.enc22(xs2, ilens2)
+            return (xs1, xs2), (ilens1, ilens2)
+
+        elif self.etype in ['amiCH1Vggblstm']:
+            # xs: utt x frame x dim(83)
+            dims1 = list(range(83)) # high frequency + 3 pitch
+            xs1, ilens1 = self.enc11(xs[:,:,dims1], ilens)
+            xs1, ilens1 = self.enc12(xs1, ilens1)
+            return xs1, ilens1
+
+        elif self.etype in ['amiCH2Vggblstm']:
+            # xs: utt x frame x dim(83)
+            dims2 = list(range(83,83*2)) # low frequency + 3 pitch
+            xs2, ilens2 = self.enc21(xs[:,:,dims2], ilens)
+            xs2, ilens2 = self.enc22(xs2, ilens2)
+            return xs2, ilens2
         else:
             logging.error(
                 "Error: need to specify an appropriate encoder archtecture")
@@ -4077,34 +4168,34 @@ class RCNN(torch.nn.Module):
         # xs: output: utt x 1 (input channel num) x frame x dim
         xs = xs.contiguous().view(xs.size(0), xs.size(1), self.inplanes, xs.size(2) // self.inplanes).transpose(1, 2)
 
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
 
         xs = self.conv1(xs)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = self.layer1(xs)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = self.layer2(xs)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = self.layer3(xs)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = self.layer4(xs)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
 
 
         # change ilens accordingly
-        logging.warning(ilens)
+        # logging.warning(ilens)
         ilens =  _get_RCNN_ilens(ilens, self.params_time)
-        logging.warning(ilens)
+        # logging.warning(ilens)
         # x: utt_list of frame (remove zeropaded frames) x (input channel num x dim)
         xs = xs.transpose(1, 2)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = xs.contiguous().view(
             xs.size(0), xs.size(1), xs.size(2) * xs.size(3))
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = linear_tensor(self.linear, xs) # projection to eprojs
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
         xs = [xs[i, :ilens[i]] for i in range(len(ilens))]
         xs = pad_list(xs, 0.0)
-        logging.warning(xs.shape)
+        # logging.warning(xs.shape)
 
         return xs, ilens
