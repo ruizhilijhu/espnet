@@ -3263,7 +3263,7 @@ class Encoder(torch.nn.Module):
                                eprojs, subsample, dropout)
             logging.info('AMI: BLSTMP(CH2) for encoders')
 
-        elif etype == 'amiCH1VgglstmCH2Vgglstm':
+        elif etype == 'amiCH1VggblstmCH2Vggblstm':
             self.enc11 = VGG(in_channels=in_channel)
             self.enc12 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
@@ -3271,12 +3271,12 @@ class Encoder(torch.nn.Module):
             self.enc22 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
             logging.info('AMI: VGGBLSTM(CH1), VGGBLSTM(CH2) for encoders')
-        elif etype == 'amiCH1Vgglstm':
+        elif etype == 'amiCH1Vggblstm':
             self.enc11 = VGG(in_channels=in_channel)
             self.enc12 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
             logging.info('AMI: VGGBLSTM(CH1) for encoders')
-        elif etype == 'amiCH2Vgglstm':
+        elif etype == 'amiCH2Vggblstm':
             self.enc21 = VGG(in_channels=in_channel)
             self.enc22 = BLSTM(_get_maxpooling2_odim(83, in_channel=in_channel),
                               elayers, eunits, eprojs, dropout)
