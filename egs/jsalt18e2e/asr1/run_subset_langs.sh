@@ -40,6 +40,7 @@ dunits=300
 atype=location
 aconv_chans=10
 aconv_filts=100
+adim=320
 
 # hybrid CTC/attention
 mtlalpha=0.5
@@ -215,6 +216,9 @@ if [ -z ${tag} ]; then
     else
         expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     fi
+    if [ $adim != 320 ];then
+        expdir=${expdir}_adim${adim}
+    fi
     if ${do_delta}; then
         expdir=${expdir}_delta
     fi
@@ -259,7 +263,8 @@ if [ ${stage} -le 3 ]; then
         --mom ${mom} \
         --wd ${wd} \
         --num-enc ${num_enc} \
-        --share-ctc ${share_ctc}
+        --share-ctc ${share_ctc} \
+        --adim ${adim}
 fi
 
 

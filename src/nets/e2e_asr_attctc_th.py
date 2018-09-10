@@ -237,7 +237,7 @@ class E2E(torch.nn.Module):
         # subsample info
         # +1 means input (+1) and layers outputs (args.elayer)
         subsample = np.ones(args.elayers + 1, dtype=np.int)
-        if args.etype in ['blstmp', 'blstmpbn', 'multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','multiVgg8blstmBlstmp','amiCH1BlstmpCH2Blstmp','amiCH1Blstmp', 'amiCH2Blstmp']:
+        if args.etype in ['blstmp', 'blstmpbn', 'multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','multiVgg8blstmBlstmp','multiVggblstmpBlstmp','multiVggblstmpBlstmpFixed4','multiVggblstmBlstmpFixed4','amiCH1BlstmpCH2Blstmp','amiCH1Blstmp', 'amiCH2Blstmp']:
         # if args.etype in ['blstmp']:
             ss = args.subsample.split("_")
             for j in range(min(args.elayers + 1, len(ss))):
@@ -3204,6 +3204,33 @@ class Encoder(torch.nn.Module):
             self.enc21 = BLSTMP(idim, elayers, eunits,
                                eprojs, subsample, dropout)
             logging.info('Multi-Encoder: VGGBLSTM, BLSTMP for encoders')
+        elif etype == 'multiVggblstmpBlstmp':
+            self.enc11 = VGG(in_channels=in_channel)
+            self.enc12 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                               elayers, eunits, eprojs,
+                               subsample, dropout)
+            self.enc21 = BLSTMP(idim, elayers, eunits,
+                               eprojs, subsample, dropout)
+            logging.info('Multi-Encoder: VGGBLSTMP, BLSTMP for encoders')
+
+        elif etype == 'multiVggblstmBlstmpFixed4':
+            self.enc11 = VGG(in_channels=in_channel)
+            self.enc12 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                               elayers, eunits, eprojs, dropout)
+            self.enc21 = BLSTMP(idim, elayers=4, cdim=320,
+                                hdim=320, subsample=np.array([1,1,1,1,1]).astype(int), dropout=0.0)
+            logging.info('Multi-Encoder: VGGBLSTM, BLSTMP for encoders')
+        elif etype == 'multiVggblstmpBlstmpFixed4':
+            self.enc11 = VGG(in_channels=in_channel)
+            self.enc12 = BLSTMP(_get_maxpooling2_odim(idim, in_channel=in_channel),
+                                elayers, eunits, eprojs,
+                                subsample, dropout)
+            self.enc21 = BLSTMP(idim, elayers=4, cdim=320,
+                                hdim=320, subsample=np.array([1,1,1,1,1]).astype(int), dropout=0.0)
+            logging.info('Multi-Encoder: VGGBLSTMP, BLSTMP for encoders')
+
+
+
         elif etype == 'multiVgg8blstmBlstmp':
             self.enc11 = VGG8(in_channels=in_channel)
             self.enc12 = BLSTM(_get_maxpooling2_odim(idim, in_channel=in_channel, mode='vgg8', out_channel=256),
@@ -3305,7 +3332,7 @@ class Encoder(torch.nn.Module):
             xs, ilens = self.enc1(xs, ilens)
             xs, ilens = self.enc2(xs, ilens)
 
-        elif self.etype in ['multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiVgg8blstmBlstmp']:
+        elif self.etype in ['multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp','multiVgg8blstmBlstmp','multiVggblstmpBlstmp','multiVggblstmpBlstmpFixed4','multiVggblstmBlstmpFixed4']:
 
 
             # if self.addGaussNoise:    # TODO only on gpu

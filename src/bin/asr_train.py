@@ -62,7 +62,7 @@ def main():
                         choices=['blstm', 'blstmp', 'blstmss', 'blstmpbn',
                                  'vgg', 'vggblstm', 'vgg8blstm','vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp', 'vggnbblstm', 'vggnbblstmp','vggsjblstm',
                                  'resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp', 'resnbblstm', 'resnbblstmp','resorigblstm',
-                                 'multiVggblstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','vggresblstm', 'vggdil2blstm', 'vggresdil2blstm','multiBlstmpBlstmp4','multiVggdil2blstmBlstmp','rcnn','rcnnNObn','rcnnDp','rcnnDpNObn','multiVgg8blstmBlstmp','amiCH1BlstmpCH2Blstmp','amiCH1Blstmp', 'amiCH2Blstmp','amiCH1VggblstmCH2Vggblstm','amiCH1Vggblstm', 'amiCH2Vggblstm'],
+                                 'multiVggblstmBlstmp','multiBandBlstmpBlstmp','highBandBlstmp','lowBandBlstmp','vggresblstm', 'vggdil2blstm', 'vggresdil2blstm','multiBlstmpBlstmp4','multiVggdil2blstmBlstmp','rcnn','rcnnNObn','rcnnDp','rcnnDpNObn','multiVgg8blstmBlstmp','multiVggblstmpBlstmp','multiVggblstmpBlstmpFixed4','multiVggblstmBlstmpFixed4','amiCH1BlstmpCH2Blstmp','amiCH1Blstmp', 'amiCH2Blstmp','amiCH1VggblstmCH2Vggblstm','amiCH1Vggblstm', 'amiCH2Vggblstm'],
                         help='Type of encoder network architecture')
     parser.add_argument('--elayers', default=4, type=int,
                         help='Number of encoder layers')
