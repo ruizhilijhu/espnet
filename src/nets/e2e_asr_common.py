@@ -73,3 +73,80 @@ def label_smoothing_dist(odim, lsm_type, transcript=None, blank=0):
         sys.exit()
 
     return labeldist
+
+
+# get output dim for latter BLSTM
+def get_vgg2l_odim(idim, in_channel=3, out_channel=128):
+    idim = idim / in_channel
+    idim = np.ceil(np.array(idim, dtype=np.float32) / 2)  # 1st max pooling
+    idim = np.ceil(np.array(idim, dtype=np.float32) / 2)  # 2nd max pooling
+    return int(idim) * out_channel  # numer of channels
+
+
+def get_maxpooling2_odim(idim, in_channel=3, out_channel=128, ceil_mode=False, mode='regular', dilation=1):
+
+    idim = idim / in_channel
+    fn = np.ceil if ceil_mode else np.floor
+    if mode == 'regular':
+
+        s, p, k = [1, dilation, 3]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k-1)-1) / s) + 1) # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [2, 0, 2]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1) # in maxpool
+        s, p, k = [1, dilation, 3]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k-1)-1) / s) + 1) # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [2, 0, 2]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1) # in maxpool
+
+    if mode == 'vgg8':
+
+        s, p, k = [1, dilation, 3]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k-1)-1) / s) + 1) # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [2, 0, 2]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1) # in maxpool
+        s, p, k = [1, dilation, 3]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k-1)-1) / s) + 1) # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [2, 0, 2]; idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1) # in maxpool
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+        s, p, k = [1, dilation, 3];
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - dilation * (k - 1) - 1) / s) + 1)  # in cnn
+
+    elif mode =='resnetorig':
+        s, p, k = [2, 3, 7]
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+        s, p, k = [2, 1, 3]
+        idim = fn(((np.array(idim, dtype=np.float32) + 2 * p - k) / s) + 1)
+
+    return int(idim) * out_channel  # numer of channels
+
+
+def get_RCNN_odim(idim, params, inplanes=1, planes=512):
+    # in spectral axis
+    idim = idim / inplanes
+    idim = np.array(idim, dtype=np.float32)
+
+    # params = [(1,2,3,4), (1,2,3,4)]
+    for param in params:
+        s, p, d, k = param # stride, padding, dilation, kernel_size
+        idim = np.floor(((idim + 2 * p - d * (k - 1) - 1) / s) + 1)
+
+    return int(idim) * planes  # numer of channels
+
+
+def get_RCNN_ilens(ilens, params):
+
+    # in time axis
+    ilens = np.array(ilens, dtype=np.float32)
+
+    # params = [(1,2,3,4), (1,2,3,4)]
+    for param in params:
+        s, p, d, k = param # stride, padding, dilation, kernel_size
+        ilens = np.array(np.floor(((ilens + 2 * p - d * (k - 1) - 1) / s) + 1),dtype=np.int64)
+    ilens = ilens.tolist()
+    return ilens
