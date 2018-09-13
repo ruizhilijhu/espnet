@@ -292,7 +292,6 @@ if [ ${stage} -le 3 ]; then
         --dunits ${dunits} \
         --atype ${atype} \
         --aconv-chans ${aconv_chans} \
-        --adim ${adim} \
         --aconv-filts ${aconv_filts} \
         --mtlalpha ${mtlalpha} \
         --batch-size ${batchsize} \
@@ -305,7 +304,8 @@ if [ ${stage} -le 3 ]; then
         --mom ${mom} \
         --wd ${wd} \
         --num-enc ${num_enc} \
-        --share-ctc ${share_ctc}
+        --share-ctc ${share_ctc} \
+        --adim ${adim}
 fi
 
 if [ ${stage} -le 4 ]; then

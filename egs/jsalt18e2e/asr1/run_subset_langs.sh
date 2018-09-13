@@ -15,8 +15,7 @@
 # general configuration
 backend=pytorch
 stage=-1       # start from -1 if you need to start from data download
-gpu=            # will be deprecated, please use ngpu
-ngpu=0          # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=0         # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -24,7 +23,7 @@ verbose=0      # verbose option
 resume=        # Resume the training from snapshot
 
 # feature configuration
-do_delta=false # true when using CNN
+do_delta=false
 
 # network archtecture
 # encoder related
@@ -66,7 +65,7 @@ penalty=0.0
 maxlenratio=0.0
 minlenratio=0.0
 ctc_weight=0.3
-recog_model=acc.best # set a model to be used for decoding: 'acc.best' or 'loss.best'
+recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
 
 # exp tag
 tag="" # tag for managing experiments.
@@ -212,9 +211,9 @@ fi
 if [ -z ${tag} ]; then
 
     if [[ $opt == "sgd" ]]; then
-        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+        expdir=exp_lang${num_lang}/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}-${lr}-${lr_decay}-${mom}-${wd}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     else
-        expdir=exp_lang${num_lang}/${train_set}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+        expdir=exp_lang${num_lang}/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     fi
     if [ $adim != 320 ];then
         expdir=${expdir}_adim${adim}
@@ -223,7 +222,7 @@ if [ -z ${tag} ]; then
         expdir=${expdir}_delta
     fi
 else
-    expdir=exp_lang${num_lang}/${train_set}_${tag}
+    expdir=exp_lang${num_lang}/${train_set}_${backend}_${tag}
 fi
 mkdir -p ${expdir}
 
@@ -267,7 +266,6 @@ if [ ${stage} -le 3 ]; then
         --adim ${adim}
 fi
 
-
 if [ ${stage} -le 4 ]; then
     echo "stage 4: Decoding"
     nj=32
@@ -289,8 +287,7 @@ if [ ${stage} -le 4 ]; then
             --backend ${backend} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
             --result-label ${expdir}/${decode_dir}/data.JOB.json \
-            --model ${expdir}/results/model.${recog_model}  \
-            --model-conf ${expdir}/results/model.conf  \
+            --model ${expdir}/results/${recog_model}  \
             --beam-size ${beam_size} \
             --penalty ${penalty} \
             --maxlenratio ${maxlenratio} \

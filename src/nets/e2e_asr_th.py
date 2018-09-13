@@ -209,7 +209,7 @@ class E2E(torch.nn.Module):
 
         # encoder
         self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
-                           self.subsample, args.dropout_rate, num_enc=args.num_enc)
+                           self.subsample, args.dropout_rate)
         # ctc
         self.ctc = CTC(odim, args.eprojs, args.dropout_rate, num_enc=args.num_enc, share_ctc=self.share_ctc)
         # attention
