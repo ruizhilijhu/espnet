@@ -28,6 +28,7 @@ from e2e_asr_common import end_detect
 from e2e_asr_common import get_vgg2l_odim, get_maxpooling2_odim, get_RCNN_ilens, get_RCNN_odim
 from e2e_asr_common import label_smoothing_dist
 
+
 CTC_LOSS_THRESHOLD = 10000
 CTC_SCORING_RATIO = 1.5
 MAX_DECODER_OUTPUT = 5
@@ -57,7 +58,7 @@ def pad_list(xs, pad_value):
     """
     n_batch = len(xs)
     max_len = max(x.size(0) for x in xs)
-    pad = xs[0].new(n_batch, max_len, *xs[0].size()[1:]).fill_(pad_value)
+    pad = xs[0].new(n_batch, max_len, * xs[0].size()[1:]).fill_(pad_value)
 
     for i in range(n_batch):
         pad[i, :xs[i].size(0)] = xs[i]
