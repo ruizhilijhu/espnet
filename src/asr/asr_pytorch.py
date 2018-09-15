@@ -392,12 +392,12 @@ def recog(args):
     # read training config
     idim, odim, train_args = get_model_conf(args.model, args.model_conf)
 
-    d_train_args = vars(train_args)
+    train_args_keys = train_args.keys()
     # to be compatible with old script where shareCtc is not in train_args
-    if 'share_ctc' not in d_train_args: d_train_args['share_ctc'] = args.share_ctc
+    if 'share_ctc' not in train_args_keys: train_args.__setstate__([('share_ctc', args.share_ctc)])
 
     # for add decoding options differernt from training
-    if 'l2_weight' not in d_train_args: d_train_args['l2_weight'] = args.l2_weight
+    if 'l2_weight' not in train_args_keys: train_args.__setstate__([('l2_weight', args.l2_weight)])
 
     for key in sorted(vars(args).keys()):
         logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))
