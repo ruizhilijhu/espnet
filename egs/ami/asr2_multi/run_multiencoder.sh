@@ -1,4 +1,4 @@
-#!/bin/bash
+#CE!/bin/bash
 
 # Copyright 2017 Johns Hopkins University (Shinji Watanabe)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -51,7 +51,8 @@ beam_size=20
 penalty=0.2
 maxlenratio=0.0
 minlenratio=0.0
-recog_model=acc.best # set a model to be used for decoding: 'acc.best' or 'loss.best'
+ctc_weight=0.3
+recog_model=model.acc.best # set a model to be used for decoding: 'acc.best' or 'loss.best'
 
 # You may set 'mic' to:
 #  ihm [individual headset mic- the default which gives best results]
@@ -69,9 +70,12 @@ mic=ihm
 # exp tag
 tag="" # tag for managing experiments.
 
+# multl-encoder multi-band
 num_enc=1
 share_ctc=true
-ctc_weight=0.3
+
+# for decoding only ; only works for multi case
+l2_weight=0.5
 
 . utils/parse_options.sh || exit 1;
 
@@ -228,7 +232,7 @@ if [ ${stage} -le 4 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
@@ -245,8 +249,7 @@ if [ ${stage} -le 4 ]; then
             --verbose ${verbose} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
             --result-label ${expdir}/${decode_dir}/data.JOB.json \
-            --model ${expdir}/results/model.${recog_model}  \
-	    --model-conf ${expdir}/results/model.conf  \
+            --model ${expdir}/results/${recog_model}  \
             --beam-size ${beam_size} \
             --penalty ${penalty} \
             --maxlenratio ${maxlenratio} \
