@@ -1,6 +1,7 @@
 #CE!/bin/bash
 
 # Copyright 2017 Johns Hopkins University (Shinji Watanabe)
+#           2018 Johns Hoplins University (Xiaofei Wang)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 . ./path.sh

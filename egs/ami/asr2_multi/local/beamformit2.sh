@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Copyright 2014, University of Edinburgh (Author: Pawel Swietojanski)
-
+# Copyright 2018, Johns Hopkins University (Xiaofei Wang)
 . ./path.sh
 
 nj=$1

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Copyright 2014, University of Edinburgh (Author: Pawel Swietojanski)
+# Copyright 2018, Johns Hopkins University (Xiaofei Wang)
 # Apache 2.0
 
 wiener_filtering=false

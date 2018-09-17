@@ -2,6 +2,7 @@
 
 # Copyright 2014  University of Edinburgh (Author: Pawel Swietojanski)
 #           2016  Johns Hopkins University (Author: Daniel Povey)
+# Copyright 2018, Johns Hopkins University (Xiaofei Wang)
 # AMI Corpus training data preparation
 # Apache 2.0
 
