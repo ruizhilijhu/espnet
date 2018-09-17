@@ -54,9 +54,16 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 opt=adadelta
 epochs=15
 
+# sgd parameters
+lr=1e-3
+lr_decay=1e-1
+mom=0.9
+wd=0
+
 # rnnlm related
 lm_weight=1.0
-use_wordlm=true
+use_lm=true
+use_wordlm=true # true: using wordlm; nolm: not using any language model; others: using char lm
 vocabsize=20000
 
 # decoding parameter
@@ -73,6 +80,14 @@ wsj1=/export/corpora5/LDC/LDC94S13B
 
 # exp tag
 tag="" # tag for managing experiments.
+
+
+# multl-encoder multi-band
+num_enc=1
+share_ctc=true
+
+# for decoding only ; only works for multi case
+l2_weight=0.5
 
 . utils/parse_options.sh || exit 1;
 
@@ -181,7 +196,7 @@ else
     lmdict=$dict
 fi
 mkdir -p ${lmexpdir}
-if [ ${stage} -le 3 ]; then
+if [[ ${stage} -le 3 && $use_lm == true ]]; then
     echo "stage 3: LM Preparation"
     mkdir -p ${lmdatadir}
     if [ $use_wordlm = true ]; then
@@ -219,7 +234,7 @@ if [ ${stage} -le 3 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     if [ "${lsm_type}" != "" ]; then
         expdir=${expdir}_lsm${lsm_type}${lsm_weight}
     fi
@@ -268,7 +283,14 @@ if [ ${stage} -le 4 ]; then
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
-        --epochs ${epochs}
+        --epochs ${epochs} \
+        --lr ${lr} \
+        --lr_decay ${lr_decay} \
+        --mom ${mom} \
+        --wd ${wd} \
+        --num-enc ${num_enc} \
+        --share-ctc ${share_ctc} \
+        --adim ${adim}
 fi
 
 if [ ${stage} -le 5 ]; then
@@ -278,12 +300,18 @@ if [ ${stage} -le 5 ]; then
     for rtask in ${recog_set}; do
     (
         decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
-        if [ $use_wordlm = true ]; then
-            decode_dir=${decode_dir}_wordrnnlm${lm_weight}
-            recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict}"
+
+        if [ $use_lm = true ]; then
+            if [ $use_wordlm = true ]; then
+                decode_dir=${decode_dir}_wordrnnlm${lm_weight}
+                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict} --lm-weight ${lm_weight}"
+            else
+                decode_dir=${decode_dir}_rnnlm${lm_weight}
+                recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best --lm-weight ${lm_weight}"
+            fi
         else
-            decode_dir=${decode_dir}_rnnlm${lm_weight}
-            recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+            echo "No language model is involved."
+            recog_opts=""
         fi
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
@@ -305,7 +333,6 @@ if [ ${stage} -le 5 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
-            --lm-weight ${lm_weight} \
             $recog_opts &
         wait
 

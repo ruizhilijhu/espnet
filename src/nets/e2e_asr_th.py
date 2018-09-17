@@ -836,7 +836,7 @@ class Enc2AttAdd(torch.nn.Module):
 
     :param int eprojs: # projection-units of encoder
     :param int dunits: # units of decoder
-    :param int att_dim: attention dimension
+    :param int k : attention dimension
     :param int num_enc: # of encoder stream
     :param int l2_dropout: flag to apply level-2 dropout
     :param int l2_weight: fix the first encoder with l2_weight, second one has 1-l2_weight. default: None, do adaptive l2_weight learning.
