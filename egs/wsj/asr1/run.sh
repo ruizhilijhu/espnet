@@ -89,6 +89,12 @@ share_ctc=true
 # for decoding only ; only works for multi case
 l2_weight=0.5
 
+# add gaussian noise to the features (only works for encoder type: 'multiBandBlstmpBlstmp', 'blstm', 'blstmp', 'blstmss', 'blstmpbn', 'vgg', 'rcnn', 'rcnnNObn', 'rcnnDp', 'rcnnDpNObn')
+addgauss=false
+addgauss_mean=0
+addgauss_std=1
+addgauss_type=all # all, high43 low43
+
 . utils/parse_options.sh || exit 1;
 
 . ./path.sh
@@ -313,6 +319,12 @@ if [ ${stage} -le 5 ]; then
             echo "No language model is involved."
             recog_opts=""
         fi
+
+        if [ $addgauss = true ]; then
+            decode_dir=${decode_dir}_gauss-${addgauss_type}-mean${addgauss_mean}-std${addgauss_std}
+            recog_opts+=" --addgauss true --addgauss-mean ${addgauss_mean} --addgauss-std ${addgauss_std} --addgauss-type ${addgauss_type}"
+        fi
+
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data

@@ -397,7 +397,8 @@ def recog(args):
     if 'share_ctc' not in train_args_keys: train_args.__setstate__([('share_ctc', args.share_ctc)])
 
     # for add decoding options differernt from training
-    if 'l2_weight' not in train_args_keys: train_args.__setstate__([('l2_weight', args.l2_weight)])
+    for arg in ['l2_weight', 'addgauss', 'addgauss_mean', 'addgauss_std', 'addgauss_type']:
+        train_args.__setstate__([(arg,  getattr(args, arg))])
 
     for key in sorted(vars(args).keys()):
         logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))
