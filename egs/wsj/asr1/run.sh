@@ -85,6 +85,7 @@ tag="" # tag for managing experiments.
 # multl-encoder multi-band
 num_enc=1
 share_ctc=true
+l2_dropout=0.5
 
 # for decoding only ; only works for multi case
 l2_weight=0.5
@@ -241,6 +242,11 @@ fi
 
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+
+    if [ $atype == 'enc2_add_l2dp' ]; then
+        expdir=${expdir}_l2attdp${l2_dropout}
+    fi
+
     if [ "${lsm_type}" != "" ]; then
         expdir=${expdir}_lsm${lsm_type}${lsm_weight}
     fi
@@ -296,7 +302,9 @@ if [ ${stage} -le 4 ]; then
         --wd ${wd} \
         --num-enc ${num_enc} \
         --share-ctc ${share_ctc} \
-        --adim ${adim}
+        --adim ${adim} \
+        --l2-dropout ${l2_dropout}
+
 fi
 
 if [ ${stage} -le 5 ]; then

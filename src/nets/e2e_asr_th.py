@@ -269,7 +269,7 @@ class E2E(torch.nn.Module):
                                       args.adim, num_enc=args.num_enc, l2_weight=args.l2_weight, l2_dropout=False)
         elif args.atype == 'enc2_add_l2dp':
             self.att = Enc2AttAdd(args.eprojs, args.dunits,
-                                  args.adim, num_enc=args.num_enc, l2_dropout=True)
+                                  args.adim, num_enc=args.num_enc, l2_dropout=args.l2_dropout)
 
         elif args.atype == 'enc2_add_linproj':
             self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
@@ -854,7 +854,7 @@ class Enc2AttAdd(torch.nn.Module):
 
     # __init__ will define the architecture of the attention model
     # chnage the l2Weight when recog
-    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=False, l2_weight=None):
+    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=None, l2_weight=None):
         super(Enc2AttAdd, self).__init__()
 
         # level 1 attention: one attention mechanism for each stream
@@ -870,8 +870,8 @@ class Enc2AttAdd(torch.nn.Module):
             self.mlp_dec_l2 = torch.nn.Linear(dunits, att_dim, bias=False)
             self.gvec_l2 = torch.nn.Linear(att_dim, 1)
 
-        if l2_dropout:
-            self.dropout_l2 = torch.nn.Dropout2d(p=0.5)
+        if l2_dropout is not None:
+            self.dropout_l2 = torch.nn.Dropout2d(p=l2_dropout)
 
         self.dunits = dunits
         self.eprojs = eprojs
@@ -962,7 +962,7 @@ class Enc2AttAdd(torch.nn.Module):
                          range(self.num_enc)]
         self.enc_h_l2 = torch.stack(self.enc_h_l2, dim=1)  # utt x numEncStream x hdim
 
-        if self.l2_dropout:  # TODO: (0,0) situation
+        if self.l2_dropout is not None:  # TODO: (0,0) situation
             self.enc_h_l2 = self.dropout_l2(self.enc_h_l2.unsqueeze(3)).squeeze(3)
 
         # level 2 attention
