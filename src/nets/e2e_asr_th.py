@@ -3124,12 +3124,22 @@ class Encoder(torch.nn.Module):
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['highBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
-            dims2 = list(range(40, 80)) + list(range(80, 83))  # high frequency + 3 pitch
-            xs_pad, ilens = self.enc1(xs_pad[:, :, dims2], ilens)
+            dims = list(range(40, 80)) + list(range(80, 83))  # high frequency + 3 pitch
+            xs_pad = xs_pad[:, :, dims]
+            if self.addgauss: # decoding stage
+                gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
+                gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
+                xs_pad += gauss_noise
+            xs_pad, ilens = self.enc1(xs_pad, ilens)
         elif self.etype in ['lowBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
-            dims1 = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
-            xs_pad, ilens = self.enc1(xs_pad[:, :, dims1], ilens)
+            dims = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
+            xs_pad = xs_pad[:, :, dims]
+            if self.addgauss: # decoding stage
+                gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
+                gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
+                xs_pad += gauss_noise
+            xs_pad, ilens = self.enc1(xs_pad, ilens)
         elif self.etype in ['amiCH1BlstmpCH2Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # low frequency + 3 pitch
