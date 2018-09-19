@@ -210,7 +210,10 @@ class E2E(torch.nn.Module):
             labeldist = None
 
         # encoder
-        if isinstance(args, asr_utils.AttributeDict): # decoding stage # TODO: training: args is namespace; decoding: args is asr_utils.AttributeDict object
+        if isinstance(args, asr_utils.AttributeDict): # decoding stage
+            # training from scratch: args is namespace;
+            # training from model: args is namespace
+            # decoding: args is asr_utils.AttributeDict object
             self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
                                self.subsample, args.dropout_rate, addgauss=args.addgauss, addgauss_mean=args.addgauss_mean, addgauss_std=args.addgauss_std,
                                addgauss_type=args.addgauss_type)
@@ -3047,7 +3050,7 @@ class Encoder(torch.nn.Module):
                     gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     xs_pad1 += gauss_noise
                 elif self.addgauss_type == 'high43':
-                    gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad2 += gauss_noise
                 elif self.addgauss_type == 'all':
                     gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
@@ -3058,7 +3061,7 @@ class Encoder(torch.nn.Module):
                     logging.error(
                         "Error: need to specify an appropriate addgauss type")
                     sys.exit()
-                xs_pad = torch.cat((xs_pad1,xs_pad2),2)
+                xs_pad = torch.cat((xs_pad1[:,:,:40],xs_pad2[:,:,:40],xs_pad1[:,:,40:]),2)
 
             xs_pad, ilens = self.enc1(xs_pad, ilens)
 
@@ -3101,7 +3104,7 @@ class Encoder(torch.nn.Module):
                     gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     xs_pad1 += gauss_noise
                 elif self.addgauss_type == 'high43':
-                    gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad2 += gauss_noise
                 elif self.addgauss_type == 'all':
                     gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
