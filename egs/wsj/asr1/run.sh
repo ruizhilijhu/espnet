@@ -20,7 +20,7 @@ seed=1
 # feature configuration
 do_delta=false
 
-# network archtecture
+# network architecture
 # encoder related
 etype=vggblstmp     # encoder architecture type
 elayers=6
@@ -61,12 +61,20 @@ mom=0.9
 wd=0
 
 # rnnlm related
-lm_weight=1.0
+use_wordlm=true     # false means to train/use a character LM
+lm_vocabsize=65000  # effective only for word LMs
+lm_layers=1         # 2 for character LMs
+lm_units=1000       # 650 for character LMs
+lm_opt=sgd          # adam for character LMs
+lm_batchsize=300    # 1024 for character LMs
+lm_epochs=20        # number of epochs
+lm_maxlen=40        # 150 for character LMs
+lm_resume=          # specify a snapshot file to resume LM training
+lmtag=              # tag for managing LMs
 use_lm=true
-use_wordlm=true # true: using wordlm; nolm: not using any language model; others: using char lm
-vocabsize=20000
 
 # decoding parameter
+lm_weight=1.0
 beam_size=30
 penalty=0.0
 maxlenratio=0.0
@@ -109,6 +117,7 @@ set -o pipefail
 
 train_set=train_si284
 train_dev=test_dev93
+train_test=test_eval92
 recog_set="test_dev93 test_eval92"
 
 if [ ${stage} -le 0 ]; then
@@ -189,46 +198,50 @@ if [ ${stage} -le 2 ]; then
     done
 fi
 
-# It takes a few days. If you just want to end-to-end ASR without LM,
+# It takes about one day. If you just want to do end-to-end ASR without LM,
 # you can skip this and remove --rnnlm option in the recognition (stage 5)
-if [ $use_wordlm = true ]; then
-    lmdatadir=data/local/wordlm_train
-    lm_batchsize=256
-    lmexpdir=exp/train_rnnlm_${backend}_word_2layer_bs${lm_batchsize}
-    lmdict=${lmexpdir}/wordlist_${vocabsize}.txt
-else
-    lmdatadir=data/local/lm_train
-    lm_batchsize=2048
-    lmexpdir=exp/train_rnnlm_${backend}_2layer_bs${lm_batchsize}
-    lmdict=$dict
+if [ -z ${lmtag} ]; then
+    lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}
+    if [ $use_wordlm = true ]; then
+        lmtag=${lmtag}_word${lm_vocabsize}
+    fi
 fi
+lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
 mkdir -p ${lmexpdir}
+
 if [[ ${stage} -le 3 && $use_lm == true ]]; then
     echo "stage 3: LM Preparation"
-    mkdir -p ${lmdatadir}
     if [ $use_wordlm = true ]; then
-        cat data/${train_set}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
-            > ${lmdatadir}/train_trans.txt
-        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z | grep -v "<" | tr [a-z] [A-Z] \
-            | perl -pe 's/\n/ <eos> /g' > ${lmdatadir}/train_others.txt
-        cat ${lmdatadir}/train_trans.txt ${lmdatadir}/train_others.txt | tr '\n' ' ' > ${lmdatadir}/train.txt
-        cat data/${train_dev}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
-            > ${lmdatadir}/valid.txt
-        text2vocabulary.py -s ${vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
+        lmdatadir=data/local/wordlm_train
+        lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
+        mkdir -p ${lmdatadir}
+        cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
+        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z \
+                | grep -v "<" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
+        cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
+        cat data/${train_test}/text | cut -f 2- -d" " > ${lmdatadir}/test.txt
+        cat ${lmdatadir}/train_trans.txt ${lmdatadir}/train_others.txt > ${lmdatadir}/train.txt
+        text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
     else
-        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
-            > ${lmdatadir}/train_trans.txt
-        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z | grep -v "<" | tr [a-z] [A-Z] \
-            | text2token.py -n 1 | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' >> ${lmdatadir}/train_others.txt
-        cat ${lmdatadir}/train_trans.txt ${lmdatadir}/train_others.txt | tr '\n' ' ' > ${lmdatadir}/train.txt
-        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
-            > ${lmdatadir}/valid.txt
+        lmdatadir=data/local/lm_train
+        lmdict=$dict
+        mkdir -p ${lmdatadir}
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text \
+            | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
+        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z \
+            | grep -v "<" | tr [a-z] [A-Z] \
+            | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text \
+            | cut -f 2- -d" " > ${lmdatadir}/valid.txt
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_test}/text \
+                | cut -f 2- -d" " > ${lmdatadir}/test.txt
+        cat ${lmdatadir}/train_trans.txt ${lmdatadir}/train_others.txt > ${lmdatadir}/train.txt
     fi
     # use only 1 gpu
     if [ ${ngpu} -gt 1 ]; then
         echo "LM training does not support multi-gpu. signle gpu will be used."
     fi
-    ${cuda_cmd} ${lmexpdir}/train.log \
+    ${cuda_cmd} --gpu ${ngpu} ${lmexpdir}/train.log \
         lm_train.py \
         --ngpu ${ngpu} \
         --backend ${backend} \
@@ -236,7 +249,14 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
         --outdir ${lmexpdir} \
         --train-label ${lmdatadir}/train.txt \
         --valid-label ${lmdatadir}/valid.txt \
+        --test-label ${lmdatadir}/test.txt \
+        --resume ${lm_resume} \
+        --layer ${lm_layers} \
+        --unit ${lm_units} \
+        --opt ${lm_opt} \
         --batchsize ${lm_batchsize} \
+        --epoch ${lm_epochs} \
+        --maxlen ${lm_maxlen} \
         --dict ${lmdict}
 fi
 
@@ -302,7 +322,6 @@ if [ ${stage} -le 4 ]; then
         --wd ${wd} \
         --num-enc ${num_enc} \
         --share-ctc ${share_ctc} \
-        --adim ${adim} \
         --l2-dropout ${l2_dropout}
 
 fi
@@ -314,10 +333,17 @@ if [ ${stage} -le 5 ]; then
     for rtask in ${recog_set}; do
     (
         decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+        if [ $use_wordlm = true ]; then
+            decode_dir=${decode_dir}_wordrnnlm${lm_weight}_${lmtag}
+            recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict}"
+        else
+            decode_dir=${decode_dir}_rnnlm${lm_weight}
+            recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+        fi
 
         if [ $use_lm = true ]; then
             if [ $use_wordlm = true ]; then
-                decode_dir=${decode_dir}_wordrnnlm${lm_weight}
+                decode_dir=${decode_dir}_rnnlm${lm_weight}
                 recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict} --lm-weight ${lm_weight}"
             else
                 decode_dir=${decode_dir}_rnnlm${lm_weight}
@@ -353,6 +379,7 @@ if [ ${stage} -le 5 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
+            --lm-weight ${lm_weight} \
             $recog_opts &
         wait
 
