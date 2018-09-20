@@ -412,21 +412,19 @@ def recog(args):
     if args.rnnlm:
         rnnlm_args = get_model_conf(args.rnnlm, args.rnnlm_conf)
         rnnlm = lm_pytorch.ClassifierWithState(
-            lm_pytorch.RNNLM(len(train_args.char_list), rnnlm_args.unit))
+            lm_pytorch.RNNLM(
+                len(train_args.char_list), rnnlm_args.layer, rnnlm_args.unit))
         torch_load(args.rnnlm, rnnlm)
         rnnlm.eval()
     else:
         rnnlm = None
 
     if args.word_rnnlm:
-        if not args.word_dict:
-            logging.error('word dictionary file is not specified for the word RNNLM.')
-            sys.exit(1)
-
-        rnnlm_args = get_model_conf(args.word_rnnlm, args.rnnlm_conf)
-        word_dict = load_labeldict(args.word_dict)
+        rnnlm_args = get_model_conf(args.word_rnnlm, args.word_rnnlm_conf)
+        word_dict = rnnlm_args.char_list_dict
         char_dict = {x: i for i, x in enumerate(train_args.char_list)}
-        word_rnnlm = lm_pytorch.ClassifierWithState(lm_pytorch.RNNLM(len(word_dict), rnnlm_args.unit))
+        word_rnnlm = lm_pytorch.ClassifierWithState(lm_pytorch.RNNLM(
+            len(word_dict), rnnlm_args.layer, rnnlm_args.unit))
         torch_load(args.word_rnnlm, word_rnnlm)
         word_rnnlm.eval()
 
