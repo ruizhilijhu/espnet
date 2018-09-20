@@ -64,6 +64,7 @@ recog_model=acc.best # set a model to be used for decoding: 'acc.best' or 'loss.
 # ./run.sh --mic sdm1
 # ./run.sh --mic mdm8
 # ./run.sh --mic smdm8
+# ./run.sh --mic sum --stage 0
 mic=ihm
 
 # exp tag
@@ -135,6 +136,9 @@ if [ ${stage} -le 0 ]; then
 	export PATH=${PATH}:$BEAMFORMIT
 	! hash BeamformIt && echo "Missing BeamformIt, run 'cd ../../../tools/kaldi/tools; extras/install_beamformit.sh; cd -;'" && exit 1
 	local/ami_beamform_array2_4mic.sh --cmd "$train_cmd" --nj 20 4 $AMI_DIR $PROCESSED_AMI_DIR
+    elif [ "$base_mic" == "sum" ]; then
+        AMI_DIR=/export/a07/xwang/kaldi-chime4/egs/ami/s5/wav_sum # another microphone array
+	PROCESSED_AMI_DIR=$AMI_DIR/beamformed
     else
 	PROCESSED_AMI_DIR=$AMI_DIR
     fi
