@@ -333,21 +333,13 @@ if [ ${stage} -le 5 ]; then
     for rtask in ${recog_set}; do
     (
         decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
-        if [ $use_wordlm = true ]; then
-            decode_dir=${decode_dir}_wordrnnlm${lm_weight}_${lmtag}
-            recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict}"
-        else
-            decode_dir=${decode_dir}_rnnlm${lm_weight}
-            recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
-        fi
 
         if [ $use_lm = true ]; then
+            decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
             if [ $use_wordlm = true ]; then
-                decode_dir=${decode_dir}_rnnlm${lm_weight}
-                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best --word-dict ${lmdict} --lm-weight ${lm_weight}"
+                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
             else
-                decode_dir=${decode_dir}_rnnlm${lm_weight}
-                recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best --lm-weight ${lm_weight}"
+                recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
             fi
         else
             echo "No language model is involved."
