@@ -909,6 +909,8 @@ class Enc2AttAdd(torch.nn.Module):
         self.num_enc = num_enc
         self.l2_weight = l2_weight
         self.l2_dropout = l2_dropout
+        self.l2_mask = None
+        self.mask = None
 
     def reset(self):
         '''reset states'''
@@ -918,6 +920,8 @@ class Enc2AttAdd(torch.nn.Module):
         self.enc_h_l2 = None
         self.pre_compute_enc_h_l1 = None
         self.pre_compute_enc_h_l2 = None
+        self.l2_mask =None
+        self.mask = None
 
     def forward(self, enc_hs_pad, enc_hs_len, dec_z, att_prev, scaling=2.0):
         '''AttLoc forward
@@ -975,6 +979,13 @@ class Enc2AttAdd(torch.nn.Module):
         # NOTE consider zero padding when compute w.
         e_l1 = [getattr(self, "gvec%d_l1" % idx)(torch.tanh(
             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
+
+        # NOTE consider zero padding when compute w.
+        if self.mask is None:
+            self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
+        e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
+
+
         w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.num_enc)]
 
         # weighted sum over flames
@@ -1002,6 +1013,12 @@ class Enc2AttAdd(torch.nn.Module):
             # NOTE consider zero padding when compute w.
             e_l2 = self.gvec_l2(torch.tanh(
                 self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
+
+            # NOTE consider zero padding when compute w.
+            if self.l2_mask is None:
+                self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
+            e_l2.masked_fill_(self.l2_mask, -float('inf'))
+
             w_l2 = F.softmax(scaling * e_l2, dim=1)
         else:  # fixed l2 weight
             w_l2 = att_prev[1]
@@ -1017,7 +1034,7 @@ class Enc2AttAdd(torch.nn.Module):
         return c_l2, [w_l1, w_l2]
 
 
-class Enc2AttAddLinProj(torch.nn.Module):
+class Enc2AttAddLinProj(torch.nn.Module): # TODO: need to be updated with the new espnet
     '''context vector level fusion with 2 encoder streams
     level-1 (stream level): H1=AddAttention1, H2=AddAttention2
     level-2 (fusion level): H=[RELU*](W*concat([a1]*H1+[a2]*H2))
@@ -1180,7 +1197,7 @@ class Enc2AttAddLinProj(torch.nn.Module):
         return c_l2, [w_l1, w_l2]
 
 
-class Enc2AttAddFrmLinProj(torch.nn.Module):
+class Enc2AttAddFrmLinProj(torch.nn.Module): # TODO: need to be updated with the new espnet
     '''frame level fusion with 2 encoder streams
     level-1 (stream level): calculate frame level attention vector at1 at2
     level-2 (fusion level):
@@ -3155,15 +3172,11 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc12(xs_pad1, ilens1)
             xs_pad2, ilens2 = self.enc21(xs_pad, ilens)
 
-            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
-            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBlstmpBlstmp4']:
             xs_pad1, ilens1 = self.enc1(xs_pad, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad, ilens)
 
-            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
-            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBandBlstmpBlstmp']:
             # xs_pad: utt x frame x dim(83)
@@ -3194,8 +3207,6 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
-            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
-            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['highBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
@@ -3223,8 +3234,6 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
 
-            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
-            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['amiCH1Blstmp']:
             # xs_pad: utt x frame x dim(83)
@@ -3245,8 +3254,6 @@ class Encoder(torch.nn.Module):
             xs_pad2, ilens2 = self.enc21(xs_pad[:, :, dims2], ilens)
             xs_pad2, ilens2 = self.enc22(xs_pad2, ilens2)
 
-            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
-            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
 
         elif self.etype in ['amiCH1Vggblstm']:
