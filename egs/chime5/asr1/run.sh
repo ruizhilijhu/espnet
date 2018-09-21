@@ -187,7 +187,7 @@ if [ ${stage} -le 2 ]; then
     utils/create_split_dir.pl \
         /export/b{14,15,16,17}/${USER}/espnet-data/egs/chime5/asr1/dump/${train_dev}/delta${do_delta}/storage \
         ${feat_dt_dir}/storage
-    fi
+    i
     dump.sh --cmd "$train_cmd" --nj 32 --do_delta $do_delta \
         data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
     dump.sh --cmd "$train_cmd" --nj 4 --do_delta $do_delta \
