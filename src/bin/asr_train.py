@@ -68,6 +68,7 @@ def main():
     # train
     parser.add_argument('--num-enc', default=1, type=int, help='Number of encoder streams.')
     parser.add_argument("--share-ctc", type=str2bool, default=True, help="Activate ctc share mode.")
+    parser.add_argument('--l2-dropout', type=float, default=0.5, help='Dropout rate for stream dropout in attention model, not include ctc model (l2)')
 
     # loss
     parser.add_argument('--ctc_type', default='warpctc', type=str,

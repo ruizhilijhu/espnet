@@ -17,7 +17,9 @@ import numpy as np
 import six
 import torch
 import torch.nn.functional as F
+import torch.distributions as tdist
 import warpctc_pytorch as warp_ctc
+import asr_utils
 
 from chainer import reporter
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -208,7 +210,15 @@ class E2E(torch.nn.Module):
             labeldist = None
 
         # encoder
-        self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
+        if isinstance(args, asr_utils.AttributeDict): # decoding stage
+            # training from scratch: args is namespace;
+            # training from model: args is namespace
+            # decoding: args is asr_utils.AttributeDict object
+            self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
+                               self.subsample, args.dropout_rate, addgauss=args.addgauss, addgauss_mean=args.addgauss_mean, addgauss_std=args.addgauss_std,
+                               addgauss_type=args.addgauss_type)
+        else:
+            self.enc = Encoder(args.etype, idim, args.elayers, args.eunits, args.eprojs,
                            self.subsample, args.dropout_rate)
         # ctc
         self.ctc = CTC(odim, args.eprojs, args.dropout_rate, num_enc=args.num_enc, share_ctc=self.share_ctc)
@@ -259,7 +269,7 @@ class E2E(torch.nn.Module):
                                       args.adim, num_enc=args.num_enc, l2_weight=args.l2_weight, l2_dropout=False)
         elif args.atype == 'enc2_add_l2dp':
             self.att = Enc2AttAdd(args.eprojs, args.dunits,
-                                  args.adim, num_enc=args.num_enc, l2_dropout=True)
+                                  args.adim, num_enc=args.num_enc, l2_dropout=args.l2_dropout)
 
         elif args.atype == 'enc2_add_linproj':
             self.att = Enc2AttAddLinProj(args.eprojs, args.dunits,
@@ -836,7 +846,7 @@ class Enc2AttAdd(torch.nn.Module):
 
     :param int eprojs: # projection-units of encoder
     :param int dunits: # units of decoder
-    :param int att_dim: attention dimension
+    :param int k : attention dimension
     :param int num_enc: # of encoder stream
     :param int l2_dropout: flag to apply level-2 dropout
     :param int l2_weight: fix the first encoder with l2_weight, second one has 1-l2_weight. default: None, do adaptive l2_weight learning.
@@ -844,7 +854,7 @@ class Enc2AttAdd(torch.nn.Module):
 
     # __init__ will define the architecture of the attention model
     # chnage the l2Weight when recog
-    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=False, l2_weight=None):
+    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=None, l2_weight=None):
         super(Enc2AttAdd, self).__init__()
 
         # level 1 attention: one attention mechanism for each stream
@@ -860,8 +870,8 @@ class Enc2AttAdd(torch.nn.Module):
             self.mlp_dec_l2 = torch.nn.Linear(dunits, att_dim, bias=False)
             self.gvec_l2 = torch.nn.Linear(att_dim, 1)
 
-        if l2_dropout:
-            self.dropout_l2 = torch.nn.Dropout2d(p=0.5)
+        if l2_dropout is not None:
+            self.dropout_l2 = torch.nn.Dropout2d(p=l2_dropout)
 
         self.dunits = dunits
         self.eprojs = eprojs
@@ -952,7 +962,7 @@ class Enc2AttAdd(torch.nn.Module):
                          range(self.num_enc)]
         self.enc_h_l2 = torch.stack(self.enc_h_l2, dim=1)  # utt x numEncStream x hdim
 
-        if self.l2_dropout:  # TODO: (0,0) situation
+        if self.l2_dropout is not None:  # TODO: (0,0) situation
             self.enc_h_l2 = self.dropout_l2(self.enc_h_l2.unsqueeze(3)).squeeze(3)
 
         # level 2 attention
@@ -2710,7 +2720,7 @@ class Encoder(torch.nn.Module):
     :param int in_channel: number of input channels
     '''
 
-    def __init__(self, etype, idim, elayers, eunits, eprojs, subsample, dropout, in_channel=1):
+    def __init__(self, etype, idim, elayers, eunits, eprojs, subsample, dropout, in_channel=1, addgauss=False, addgauss_mean=0, addgauss_std=1, addgauss_type='all'):
         super(Encoder, self).__init__()
 
         # blstm
@@ -3015,6 +3025,10 @@ class Encoder(torch.nn.Module):
             sys.exit()
 
         self.etype = etype
+        self.addgauss = addgauss
+        self.addgauss_mean = addgauss_mean
+        self.addgauss_std = addgauss_std
+        self.addgauss_type = addgauss_type
 
     def forward(self, xs_pad, ilens):
         '''Encoder forward
@@ -3025,7 +3039,32 @@ class Encoder(torch.nn.Module):
         :rtype: torch.Tensor
         '''
         if self.etype in ['blstm', 'blstmp', 'blstmss', 'blstmpbn', 'vgg', 'rcnn', 'rcnnNObn', 'rcnnDp', 'rcnnDpNObn']:
+
+            if self.addgauss: # decoding stage #TODO hardcode the dim
+                dims1 = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
+                dims2 = list(range(40, 80)) + list(range(80, 83))  # high frequency + 3 pitch
+                xs_pad1 = xs_pad[:, :, dims1]
+                xs_pad2 = xs_pad[:, :, dims2]
+                gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
+                if self.addgauss_type == 'low43':
+                    gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    xs_pad1 += gauss_noise
+                elif self.addgauss_type == 'high43':
+                    gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad2 += gauss_noise
+                elif self.addgauss_type == 'all':
+                    gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    gauss_noise2 = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad1 += gauss_noise1
+                    xs_pad2 += gauss_noise2
+                else:
+                    logging.error(
+                        "Error: need to specify an appropriate addgauss type")
+                    sys.exit()
+                xs_pad = torch.cat((xs_pad1[:,:,:40],xs_pad2[:,:,:40],xs_pad1[:,:,40:]),2)
+
             xs_pad, ilens = self.enc1(xs_pad, ilens)
+
         elif self.etype in ['vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp',
                             'vggnbblstm', 'vggnbblstmp', 'vggsjblstm', 'vggresblstm', 'vggdil2blstm', 'vggresdil2blstm',
                             'vgg8blstm']:
@@ -3055,8 +3094,30 @@ class Encoder(torch.nn.Module):
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
             dims2 = list(range(40, 80)) + list(range(80, 83))  # high frequency + 3 pitch
-            xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
-            xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
+
+            xs_pad1 = xs_pad[:, :, dims1]
+            xs_pad2 = xs_pad[:, :, dims2]
+
+            if self.addgauss: # decoding stage
+                gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
+                if self.addgauss_type == 'low43':
+                    gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    xs_pad1 += gauss_noise
+                elif self.addgauss_type == 'high43':
+                    gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad2 += gauss_noise
+                elif self.addgauss_type == 'all':
+                    gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    gauss_noise2 = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad1 += gauss_noise1
+                    xs_pad2 += gauss_noise2
+                else:
+                    logging.error(
+                        "Error: need to specify an appropriate addgauss type")
+                    sys.exit()
+
+            xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
+            xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
             xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
             xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)

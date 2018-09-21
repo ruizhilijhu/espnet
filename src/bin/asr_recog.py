@@ -66,9 +66,20 @@ def main():
                         help='Word list to read')
     parser.add_argument('--lm-weight', default=0.1, type=float,
                         help='RNNLM weight.')
+
+    # add gaussian noise  related
+    parser.add_argument('--addgauss', type=str2bool, default=False,
+                        help='Add Gaussian noise')
+    parser.add_argument('--addgauss-mean', type=float, default=0,
+                        help='Mean of added Gaussian noise')
+    parser.add_argument('--addgauss-std', type=float, default=1,
+                        help='Standard deviation of added Gaussian noise')
+    parser.add_argument('--addgauss-type', type=str, default='all',
+                        choices=['all','high43','low43'],
+                        help='Type of adding gaussian noise')
+
     # multiencoder multibands
     # decode
-    # parser.add_argument('--add-gauss-noise', default=False, type=str2bool, help='Add Gaussian Noise (mean=0, var=1) to first few streams. for decoding only')
     parser.add_argument('--l2-weight', default=None, type=float, help='fix l2 att weight for first encoder, then the second will be 1-eval-l2-weight, default:None')
 
     args = parser.parse_args()
