@@ -53,7 +53,13 @@ penalty=0.2
 maxlenratio=0.0
 minlenratio=0.0
 ctc_weight=0.3
-recog_model=model.acc.best # set a model to be used for decoding: 'acc.best' or 'loss.best'
+recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
+
+# rnnlm related
+lm_weight=1.0
+use_wordlm=true
+vocabsize=20000
+
 
 # You may set 'mic' to:
 #  ihm [individual headset mic- the default which gives best results]
@@ -182,6 +188,54 @@ if [ ${stage} -le 2 ]; then
     done
 fi
 
+# It takes a few days. If you just want to end-to-end ASR without LM,
+# you can skip this and remove --rnnlm option in the recognition (stage 5)
+if [ $use_wordlm = true ]; then
+    lmdatadir=data/local/wordlm_train
+    lm_batchsize=256
+    lmexpdir=exp/train_rnnlm_${backend}_word_2layer_bs${lm_batchsize}
+    lmdict=${lmexpdir}/wordlist_${vocabsize}.txt
+else
+    lmdatadir=data/local/lm_train
+    lm_batchsize=2048
+    lmexpdir=exp/train_rnnlm_${backend}_2layer_bs${lm_batchsize}
+    lmdict=$dict
+fi
+mkdir -p ${lmexpdir}
+if [ ${stage} -le 3 ]; then
+    echo "stage 3: LM Preparation"
+    mkdir -p ${lmdatadir}
+    if [ $use_wordlm = true ]; then
+        cat data/${train_set}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
+            > ${lmdatadir}/train_trans.txt
+        cat ${lmdatadir}/train_trans.txt | tr '\n' ' ' > ${lmdatadir}/train.txt
+        cat data/${train_dev}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
+            > ${lmdatadir}/valid.txt
+        text2vocabulary.py -s ${vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
+    else
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
+            > ${lmdatadir}/train_trans.txt
+        cat ${lmdatadir}/train_trans.txt | tr '\n' ' ' > ${lmdatadir}/train.txt
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text | cut -f 2- -d" " | perl -pe 's/\n/ <eos> /g' \
+            > ${lmdatadir}/valid.txt
+    fi
+    # use only 1 gpu
+    if [ ${ngpu} -gt 1 ]; then
+        echo "LM training does not support multi-gpu. signle gpu will be used."
+    fi
+    ${cuda_cmd} ${lmexpdir}/train.log \
+        lm_train.py \
+        --ngpu ${ngpu} \
+        --backend ${backend} \
+        --verbose 1 \
+        --outdir ${lmexpdir} \
+        --train-label ${lmdatadir}/train.txt \
+        --valid-label ${lmdatadir}/valid.txt \
+        --batchsize ${lm_batchsize} \
+        --dict ${lmdict}
+fi
+
+
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
     if ${do_delta}; then
@@ -192,8 +246,8 @@ else
 fi
 mkdir -p ${expdir}
 
-if [ ${stage} -le 3 ]; then
-    echo "stage 3: Network Training"
+if [ ${stage} -le 4 ]; then
+    echo "stage 4: Network Training"
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
         asr_train.py \
         --ngpu ${ngpu} \
@@ -227,13 +281,13 @@ if [ ${stage} -le 3 ]; then
 	--share-ctc ${share_ctc}
 fi
 
-if [ ${stage} -le 4 ]; then
-    echo "stage 4: Decoding"
+if [ ${stage} -le 5 ]; then
+    echo "stage 5: Decoding"
     nj=32
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
@@ -256,6 +310,8 @@ if [ ${stage} -le 4 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
 	    --ctc-weight ${ctc_weight} \
+	    --rnnlm ${lmexpdir}/rnnlm.model.best \
+	    --lm-weight ${lm_weight} \
             &
         wait
 
@@ -266,4 +322,5 @@ if [ ${stage} -le 4 ]; then
     wait
     echo "Finished"
 fi
+
 
