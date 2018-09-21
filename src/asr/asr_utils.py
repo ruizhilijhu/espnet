@@ -157,7 +157,7 @@ class PlotAttentionReport(extension.Extension):
         batch = self.converter([self.converter.transform(self.data)], self.device)
         if isinstance(batch, tuple):
             att_ws = self.att_vis_fn(*batch)
-        elif isinstance(x, dict):
+        elif isinstance(batch, dict):
             att_ws = self.att_vis_fn(**batch)
         else:
             att_ws = self.att_vis_fn(batch)
@@ -275,17 +275,6 @@ def _torch_snapshot_object(trainer, target, filename, savefun):
         shutil.rmtree(tmpdir)
 
 
-# * -------------------- language model related -------------------- *
-def load_labeldict(dict_file):
-    labeldict = {'<blank>': 0}  # <blank>'s Id is 0
-    for ln in open(dict_file, 'r').readlines():
-        s, i = ln.split()
-        labeldict[s] = int(i)
-    if '<eos>' not in labeldict:
-        labeldict['<eos>'] = len(labeldict)
-    return labeldict
-
-
 # * -------------------- general -------------------- *
 class AttributeDict(object):
     def __init__(self, obj):
@@ -306,8 +295,17 @@ class AttributeDict(object):
         else:
             return None
 
+    def __getitem__(self, name):
+        return self.obj[name]
+
+    def __len__(self):
+        return len(self.obj)
+
     def fields(self):
         return self.obj
+
+    def items(self):
+        return self.obj.items()
 
     def keys(self):
         return self.obj.keys()
