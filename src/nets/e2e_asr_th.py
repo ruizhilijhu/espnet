@@ -678,9 +678,9 @@ class AttDot(torch.nn.Module):
                       dim=2)  # utt x frame
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -753,9 +753,9 @@ class AttAdd(torch.nn.Module):
         e = self.gvec(torch.tanh(self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -852,9 +852,9 @@ class AttLoc(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -980,10 +980,10 @@ class Enc2AttAdd(torch.nn.Module):
         e_l1 = [getattr(self, "gvec%d_l1" % idx)(torch.tanh(
             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
 
-        # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
-        e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
+        # # NOTE consider zero padding when compute w.
+        # if self.mask is None:
+        #     self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
+        # e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
 
 
         w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.num_enc)]
@@ -1014,10 +1014,10 @@ class Enc2AttAdd(torch.nn.Module):
             e_l2 = self.gvec_l2(torch.tanh(
                 self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
 
-            # NOTE consider zero padding when compute w.
-            if self.l2_mask is None:
-                self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
-            e_l2.masked_fill_(self.l2_mask, -float('inf'))
+            # # NOTE consider zero padding when compute w.
+            # if self.l2_mask is None:
+            #     self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
+            # e_l2.masked_fill_(self.l2_mask, -float('inf'))
 
             w_l2 = F.softmax(scaling * e_l2, dim=1)
         else:  # fixed l2 weight
@@ -1494,10 +1494,10 @@ class AttCov(torch.nn.Module):
         # utt x frame x att_dim -> utt x frame
         e = self.gvec(torch.tanh(cov_vec + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
-        # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # # NOTE consider zero padding when compute w.
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
 
@@ -1598,9 +1598,9 @@ class AttLoc2D(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -1712,9 +1712,9 @@ class AttLocRec(torch.nn.Module):
         e = self.gvec(torch.tanh(att_h.unsqueeze(1) + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -1813,9 +1813,9 @@ class AttCovLoc(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        if self.mask is None:
-            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        e.masked_fill_(self.mask, -float('inf'))
+        # if self.mask is None:
+        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        # e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
 
@@ -1912,9 +1912,9 @@ class AttMultiHeadDot(torch.nn.Module):
                 batch, 1, self.att_dim_k), dim=2)  # utt x frame
 
             # NOTE consider zero padding when compute w.
-            if self.mask is None:
-                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            e.masked_fill_(self.mask, -float('inf'))
+            # if self.mask is None:
+            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            # e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2017,9 +2017,9 @@ class AttMultiHeadAdd(torch.nn.Module):
                 self.pre_compute_k[h] + self.mlp_q[h](dec_z).view(batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            if self.mask is None:
-                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            e.masked_fill_(self.mask, -float('inf'))
+            # if self.mask is None:
+            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            # e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2141,9 +2141,9 @@ class AttMultiHeadLoc(torch.nn.Module):
                     batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            if self.mask is None:
-                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            e.masked_fill_(self.mask, -float('inf'))
+            # if self.mask is None:
+            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            # e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2269,9 +2269,9 @@ class AttMultiHeadMultiResLoc(torch.nn.Module):
                     batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            if self.mask is None:
-                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            e.masked_fill_(self.mask, -float('inf'))
+            # if self.mask is None:
+            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            # e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
