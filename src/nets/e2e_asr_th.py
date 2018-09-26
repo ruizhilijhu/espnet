@@ -995,7 +995,7 @@ class Enc2AttAdd(torch.nn.Module):
         e_l1 = [getattr(self, "gvec%d_l1" % idx)(torch.tanh(
             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
 
-        # # NOTE consider zero padding when compute w.
+        # NOTE consider zero padding when compute w.
         if self.mask is None:
             self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
         e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
@@ -1029,10 +1029,10 @@ class Enc2AttAdd(torch.nn.Module):
             e_l2 = self.gvec_l2(torch.tanh(
                 self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
 
-            # # NOTE consider zero padding when compute w.
-            # if self.l2_mask is None:
-            #     self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
-            # e_l2.masked_fill_(self.l2_mask, -float('inf'))
+            # NOTE consider zero padding when compute w.
+            if self.l2_mask is None:
+                self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
+            e_l2.masked_fill_(self.l2_mask, -float('inf'))
 
             w_l2 = F.softmax(scaling * e_l2, dim=1)
         else:  # fixed l2 weight
@@ -1509,7 +1509,7 @@ class AttCov(torch.nn.Module):
         # utt x frame x att_dim -> utt x frame
         e = self.gvec(torch.tanh(cov_vec + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
-        # # NOTE consider zero padding when compute w.
+        # NOTE consider zero padding when compute w.
         if self.mask is None:
             self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float('inf'))
