@@ -32,11 +32,17 @@ dlayers=1
 dunits=300
 # attention related
 atype=location
+adim=320
+awin=5
+aheads=4
 aconv_chans=10
 aconv_filts=100
 
 # hybrid CTC/attention
 mtlalpha=0.5
+
+lsm_type=unigram
+lsm_weight=0.05
 
 # minibatch related
 batchsize=30
@@ -46,6 +52,11 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 # optimization related
 opt=adadelta
 epochs=15
+
+lr=1e-3
+lr_decay=1e-1
+mom=0.9
+wd=0
 
 # rnnlm related
 use_wordlm=true     # false means to train/use a character LM
@@ -63,7 +74,7 @@ use_lm=true
 # decoding parameter
 lm_weight=1.0
 beam_size=20
-penalty=0
+penalty=0.2
 maxlenratio=0.0
 minlenratio=0.0
 ctc_weight=0.3
@@ -88,9 +99,16 @@ tag="" # tag for managing experiments.
 # multl-encoder multi-band
 num_enc=1
 share_ctc=true
+l2_dropout=0.5
 
 # for decoding only ; only works for multi case
 l2_weight=0.5
+
+# add gaussian noise to the features (only works for encoder type: 'multiBandBlstmpBlstmp', 'blstm', 'blstmp', 'blstmss', 'blstmpbn', 'vgg', 'rcnn', 'rcnnNObn', 'rcnnDp', 'rcnnDpNObn')
+addgauss=false
+addgauss_mean=0
+addgauss_std=1
+addgauss_type=all # all, high43 low43
 
 . utils/parse_options.sh || exit 1;
 
@@ -249,6 +267,9 @@ fi
 
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+    if [ "${lsm_type}" != "" ]; then
+        expdir=${expdir}_lsm${lsm_type}${lsm_weight}
+    fi
     if ${do_delta}; then
         expdir=${expdir}_delta
     fi
@@ -262,7 +283,6 @@ if [ ${stage} -le 4 ]; then
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
         asr_train.py \
         --ngpu ${ngpu} \
-	--num-enc ${num_enc} \
         --backend ${backend} \
         --outdir ${expdir}/results \
         --debugmode ${debugmode} \
@@ -271,6 +291,7 @@ if [ ${stage} -le 4 ]; then
         --minibatches ${N} \
         --verbose ${verbose} \
         --resume ${resume} \
+        --seed ${seed} \
         --train-json ${feat_tr_dir}/data.json \
         --valid-json ${feat_dt_dir}/data.json \
         --etype ${etype} \
@@ -281,15 +302,26 @@ if [ ${stage} -le 4 ]; then
         --dlayers ${dlayers} \
         --dunits ${dunits} \
         --atype ${atype} \
+	--adim ${adim} \
+	--awin ${awin} \
+	--aheads ${aheads} \
         --aconv-chans ${aconv_chans} \
         --aconv-filts ${aconv_filts} \
         --mtlalpha ${mtlalpha} \
+	--lsm-type ${lsm_type} \
+	--lsm-weight ${lsm_weight} \
         --batch-size ${batchsize} \
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
         --epochs ${epochs} \
-	--share-ctc ${share_ctc}
+	--lr ${lr} \
+	--lr_decay ${lr_decay} \
+	--mom ${mom} \
+	--wd ${wd} \
+	--num-enc ${num_enc} \
+	--share-ctc ${share_ctc} \
+	--l2-dropout ${l2_dropout}
 fi
 
 if [ ${stage} -le 5 ]; then
@@ -306,10 +338,14 @@ if [ ${stage} -le 5 ]; then
             else
 	        recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
             fi
-        else            
+        else
 	    echo "No language model is involved."
 	    recog_opts=""
 	fi
+        if [ $addgauss = true ]; then
+            decode_dir=${decode_dir}_gauss-${addgauss_type}-mean${addgauss_mean}-std${addgauss_std}
+            recog_opts+=" --addgauss true --addgauss-mean ${addgauss_mean} --addgauss-std ${addgauss_std} --addgauss-type ${addgauss_type}"
+        fi
 
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
@@ -323,8 +359,6 @@ if [ ${stage} -le 5 ]; then
             asr_recog.py \
             --ngpu ${ngpu} \
             --backend ${backend} \
-            --debugmode ${debugmode} \
-            --verbose ${verbose} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
             --result-label ${expdir}/${decode_dir}/data.JOB.json \
             --model ${expdir}/results/${recog_model}  \
