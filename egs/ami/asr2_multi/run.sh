@@ -46,12 +46,26 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 opt=adadelta
 epochs=15
 
+# rnnlm related
+use_wordlm=true     # false means to train/use a character LM
+lm_vocabsize=65000  # effective only for word LMs
+lm_layers=1         # 2 for character LMs
+lm_units=1000       # 650 for character LMs
+lm_opt=sgd          # adam for character LMs
+lm_batchsize=300    # 1024 for character LMs
+lm_epochs=20        # number of epochs
+lm_maxlen=40        # 150 for character LMs
+lm_resume=          # specify a snapshot file to resume LM training
+lmtag=              # tag for managing LMs
+
 # decoding parameter
+lm_weight=1.0
 beam_size=20
-penalty=0.2
+penalty=0
 maxlenratio=0.0
 minlenratio=0.0
-recog_model=acc.best # set a model to be used for decoding: 'acc.best' or 'loss.best'
+ctc_weight=0.3
+recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
 
 # You may set 'mic' to:
 #  ihm [individual headset mic- the default which gives best results]
@@ -170,12 +184,12 @@ if [ ${stage} -le 1 ]; then
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr1/dump/${train_set}/delta${do_delta}/storage \
+        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr2_multi/dump/${train_set}/delta${do_delta}/storage \
         ${feat_tr_dir}/storage
     fi
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr1/dump/${train_dev}/delta${do_delta}/storage \
+        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr2_multi/dump/${train_dev}/delta${do_delta}/storage \
         ${feat_dt_dir}/storage
     fi
     dump.sh --cmd "$train_cmd" --nj 32 --do_delta $do_delta \
@@ -213,6 +227,56 @@ if [ ${stage} -le 2 ]; then
     done
 fi
 
+# It takes a few days. If you just want to end-to-end ASR without LM,
+# you can skip this and remove --rnnlm option in the recognition (stage 5)
+if [ -z ${lmtag} ]; then
+    lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}
+    if [ $use_wordlm = true ]; then
+	lmtag=${lmtag}_word${lm_vocabsize}
+    fi
+fi
+lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
+mkdir -p ${lmexpdir}
+if [ ${stage} -le 3 ]; then
+    echo "stage 3: LM Preparation"
+    if [ $use_wordlm = true ]; then
+	lmdatadir=data/local/wordlm_train
+	lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
+	mkdir -p ${lmdatadir}
+        cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train.txt
+        cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
+        text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
+    else
+	lmdatadir=data/local/lm_train
+	lmdict=$dict
+	mkdir -p ${lmdatadir}
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " \
+            > ${lmdatadir}/train.txt
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text | cut -f 2- -d" " \
+            > ${lmdatadir}/valid.txt
+    fi
+    # use only 1 gpu
+    if [ ${ngpu} -gt 1 ]; then
+        echo "LM training does not support multi-gpu. signle gpu will be used."
+    fi
+    ${cuda_cmd} ${lmexpdir}/train.log \
+        lm_train.py \
+        --ngpu ${ngpu} \
+        --backend ${backend} \
+        --verbose 1 \
+        --outdir ${lmexpdir} \
+        --train-label ${lmdatadir}/train.txt \
+        --valid-label ${lmdatadir}/valid.txt \
+	--resume ${lm_resume} \
+	--layer ${lm_layers} \
+        --unit ${lm_units} \
+        --opt ${lm_opt} \
+        --batchsize ${lm_batchsize} \
+        --epoch ${lm_epochs} \
+        --maxlen ${lm_maxlen} \
+        --dict ${lmdict}
+fi
+
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
     if ${do_delta}; then
@@ -223,7 +287,7 @@ else
 fi
 mkdir -p ${expdir}
 
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 4 ]; then
     echo "stage 3: Network Training"
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
         asr_train.py \
@@ -249,20 +313,27 @@ if [ ${stage} -le 3 ]; then
         --aconv-chans ${aconv_chans} \
         --aconv-filts ${aconv_filts} \
         --mtlalpha ${mtlalpha} \
-        --batch-size ${batchsize} \
+        --batch-size ${batchsiqze} \
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
         --epochs ${epochs}
 fi
 
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 5 ]; then
     echo "stage 4: Decoding"
     nj=32
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}
+
+        if [ $use_wordlm = true ]; then
+	       recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+        else
+	       recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+        fi 
+
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
@@ -279,12 +350,15 @@ if [ ${stage} -le 4 ]; then
             --verbose ${verbose} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
             --result-label ${expdir}/${decode_dir}/data.JOB.json \
-            --model ${expdir}/results/model.${recog_model}  \
+            --model ${expdir}/results/${recog_model}  \
             --beam-size ${beam_size} \
             --penalty ${penalty} \
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
-            &
+            --ctc-weight ${ctc_weight} \
+	    --rnnlm ${lmexpdir}/rnnlm.model.best \
+	    --lm-weight ${lm_weight} \
+	    $recog_opts &
         wait
 
         score_sclite.sh --wer true ${expdir}/${decode_dir} ${dict}
