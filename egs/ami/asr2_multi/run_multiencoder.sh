@@ -16,6 +16,7 @@ dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
 verbose=0      # verbose option
 resume=        # Resume the training from snapshot
+seed=1
 
 # feature configuration
 do_delta=false
@@ -192,25 +193,33 @@ if [ ${stage} -le 1 ]; then
 fi
 
 dict=data/lang_1char/${train_set}_units.txt
+nlsyms=data/lang_1char/non_lang_syms.txt
+
 echo "dictionary: ${dict}"
 if [ ${stage} -le 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
     mkdir -p data/lang_1char/
+
+    echo "make a non-linguistic symbol list"
+    cut -f 2- data/${train_set}/text | tr " " "\n" | sort | uniq | grep "<" > ${nlsyms}
+    cat ${nlsyms}
+
+    echo "make a dictionary"
     echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
-    text2token.py -s 1 -n 1 data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
+    text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
     | sort | uniq | grep -v -e '^\s*$' | awk '{print $0 " " NR+1}' >> ${dict}
     wc -l ${dict}
 
-    # make json labels
-    data2json.sh --feat ${feat_tr_dir}/feats.scp \
+    echo "make json files"
+    data2json.sh --feat ${feat_tr_dir}/feats.scp --nlsyms ${nlsyms} \
          data/${train_set} ${dict} > ${feat_tr_dir}/data.json
-    data2json.sh --feat ${feat_dt_dir}/feats.scp \
+    data2json.sh --feat ${feat_dt_dir}/feats.scp --nlsyms ${nlsyms} \
          data/${train_dev} ${dict} > ${feat_dt_dir}/data.json
     for rtask in ${recog_set}; do
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
         data2json.sh --feat ${feat_recog_dir}/feats.scp \
-            data/${rtask} ${dict} > ${feat_recog_dir}/data.json
+            --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
     done
 fi
 
@@ -219,34 +228,38 @@ fi
 if [ -z ${lmtag} ]; then
     lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}
     if [ $use_wordlm = true ]; then
-	lmtag=${lmtag}_word${lm_vocabsize}
+        lmtag=${lmtag}_word${lm_vocabsize}
     fi
 fi
 lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
 mkdir -p ${lmexpdir}
-if [ ${stage} -le 3 ]; then
+
+if [[ ${stage} -le 3 && $use_lm == true ]]; then
     echo "stage 3: LM Preparation"
     if [ $use_wordlm = true ]; then
-	lmdatadir=data/local/wordlm_train
-	lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
-	mkdir -p ${lmdatadir}
+	    lmdatadir=data/local/wordlm_train
+	    lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
+	    mkdir -p ${lmdatadir}
         cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train.txt
         cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
+        cat data/mdm_multistream_eval/text | cut -f 2- -d" " > ${lmdatadir}/test.txt
         text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
     else
-	lmdatadir=data/local/lm_train
-	lmdict=$dict
-	mkdir -p ${lmdatadir}
+	    lmdatadir=data/local/lm_train
+	    lmdict=$dict
+	    mkdir -p ${lmdatadir}
         text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " \
             > ${lmdatadir}/train.txt
         text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text | cut -f 2- -d" " \
             > ${lmdatadir}/valid.txt
+        text2token.py -s 1 -n 1 -l ${nlsyms} data/mdm_multistream_eval/text | cut -f 2- -d" " \
+            > ${lmdatadir}/test.txt
     fi
     # use only 1 gpu
     if [ ${ngpu} -gt 1 ]; then
         echo "LM training does not support multi-gpu. signle gpu will be used."
     fi
-    ${cuda_cmd} ${lmexpdir}/train.log \
+    ${cuda_cmd} --gpu ${ngpu} ${lmexpdir}/train.log \
         lm_train.py \
         --ngpu ${ngpu} \
         --backend ${backend} \
@@ -254,8 +267,9 @@ if [ ${stage} -le 3 ]; then
         --outdir ${lmexpdir} \
         --train-label ${lmdatadir}/train.txt \
         --valid-label ${lmdatadir}/valid.txt \
-	--resume ${lm_resume} \
-	--layer ${lm_layers} \
+        --test-label ${lmdatadir}/test.txt \
+        --resume ${lm_resume} \
+        --layer ${lm_layers} \
         --unit ${lm_units} \
         --opt ${lm_opt} \
         --batchsize ${lm_batchsize} \
@@ -267,6 +281,11 @@ fi
 
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+
+    if [ $atype == 'enc2_add_l2dp' ]; then
+        expdir=${expdir}_l2attdp${l2_dropout}
+    fi
+
     if [ "${lsm_type}" != "" ]; then
         expdir=${expdir}_lsm${lsm_type}${lsm_weight}
     fi
@@ -302,26 +321,27 @@ if [ ${stage} -le 4 ]; then
         --dlayers ${dlayers} \
         --dunits ${dunits} \
         --atype ${atype} \
-	--adim ${adim} \
-	--awin ${awin} \
-	--aheads ${aheads} \
+        --adim ${adim} \
+        --awin ${awin} \
+        --aheads ${aheads} \
         --aconv-chans ${aconv_chans} \
         --aconv-filts ${aconv_filts} \
         --mtlalpha ${mtlalpha} \
-	--lsm-type ${lsm_type} \
-	--lsm-weight ${lsm_weight} \
+        --lsm-type ${lsm_type} \
+        --lsm-weight ${lsm_weight} \
         --batch-size ${batchsize} \
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
         --epochs ${epochs} \
-	--lr ${lr} \
-	--lr_decay ${lr_decay} \
-	--mom ${mom} \
-	--wd ${wd} \
-	--num-enc ${num_enc} \
-	--share-ctc ${share_ctc} \
-	--l2-dropout ${l2_dropout}
+        --lr ${lr} \
+        --lr_decay ${lr_decay} \
+        --mom ${mom} \
+        --wd ${wd} \
+        --num-enc ${num_enc} \
+        --share-ctc ${share_ctc} \
+        --l2-dropout ${l2_dropout}
+
 fi
 
 if [ ${stage} -le 5 ]; then
@@ -331,17 +351,19 @@ if [ ${stage} -le 5 ]; then
     for rtask in ${recog_set}; do
     (
         decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+
         if [ $use_lm = true ]; then
             decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
             if [ $use_wordlm = true ]; then
-	        recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
             else
-	        recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+                recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
             fi
         else
-	    echo "No language model is involved."
-	    recog_opts=""
-	fi
+            echo "No language model is involved."
+            recog_opts=""
+        fi
+
         if [ $addgauss = true ]; then
             decode_dir=${decode_dir}_gauss-${addgauss_type}-mean${addgauss_mean}-std${addgauss_std}
             recog_opts+=" --addgauss true --addgauss-mean ${addgauss_mean} --addgauss-std ${addgauss_std} --addgauss-type ${addgauss_type}"
@@ -350,7 +372,7 @@ if [ ${stage} -le 5 ]; then
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
-        splitjson.py --parts ${nj} ${feat_recog_dir}/data.json 
+        splitjson.py --parts ${nj} ${feat_recog_dir}/data.json
 
         #### use CPU for decoding
         ngpu=0
@@ -366,12 +388,12 @@ if [ ${stage} -le 5 ]; then
             --penalty ${penalty} \
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
-	    --ctc-weight ${ctc_weight} \
-	    --lm-weight ${lm_weight} \
-	    $recog_opts &
+            --ctc-weight ${ctc_weight} \
+            --lm-weight ${lm_weight} \
+            $recog_opts &
         wait
 
-        score_sclite.sh --wer true ${expdir}/${decode_dir} ${dict}
+        score_sclite.sh --wer true --nlsyms ${nlsyms} ${expdir}/${decode_dir} ${dict}
 
     ) &
     done
