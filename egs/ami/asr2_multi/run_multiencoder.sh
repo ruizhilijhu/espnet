@@ -58,6 +58,7 @@ lm_epochs=20        # number of epochs
 lm_maxlen=40        # 150 for character LMs
 lm_resume=          # specify a snapshot file to resume LM training
 lmtag=              # tag for managing LMs
+use_lm=true
 
 # decoding parameter
 lm_weight=1.0
@@ -297,13 +298,18 @@ if [ ${stage} -le 5 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}
-
-        if [ $use_wordlm = true ]; then
-	       recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
-        else
-	       recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
-        fi 
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+        if [ $use_lm = true ]; then
+            decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
+            if [ $use_wordlm = true ]; then
+	        recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+            else
+	        recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+            fi
+        else            
+	    echo "No language model is involved."
+	    recog_opts=""
+	fi
 
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
@@ -327,7 +333,6 @@ if [ ${stage} -le 5 ]; then
             --maxlenratio ${maxlenratio} \
             --minlenratio ${minlenratio} \
 	    --ctc-weight ${ctc_weight} \
-	    --rnnlm ${lmexpdir}/rnnlm.model.best \
 	    --lm-weight ${lm_weight} \
 	    $recog_opts &
         wait
