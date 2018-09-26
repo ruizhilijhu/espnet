@@ -88,6 +88,21 @@ def make_pad_mask(lengths):
 
     return mask
 
+def fill_padded_part(xs, ilens, fill_value):
+    """Fucntion to fill padded part with selected value
+
+    :param torch.Tensor xs: tensor (B, Tmax, ...)
+    :param torch.Tensor ilens:  list of lengths (B)
+    :param float fill_value:  value to fill padded part
+    :return: xs whose padded parts are filled by fill_value
+    """
+    assert xs.size(0) == len(ilens)
+    new_xs = xs.new(*xs.size()).fill_(fill_value)
+    for idx, l in enumerate(ilens):
+        new_xs[idx, :l] = xs[idx, :l]
+
+    return new_xs
+
 
 def th_accuracy(pad_outputs, pad_targets, ignore_label):
     """Function to calculate accuracy
@@ -678,9 +693,9 @@ class AttDot(torch.nn.Module):
                       dim=2)  # utt x frame
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -753,9 +768,9 @@ class AttAdd(torch.nn.Module):
         e = self.gvec(torch.tanh(self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -852,9 +867,9 @@ class AttLoc(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -981,9 +996,9 @@ class Enc2AttAdd(torch.nn.Module):
             self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
 
         # # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
-        # e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
+        if self.mask is None:
+            self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
+        e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
 
 
         w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.num_enc)]
@@ -1495,9 +1510,9 @@ class AttCov(torch.nn.Module):
         e = self.gvec(torch.tanh(cov_vec + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
 
@@ -1598,9 +1613,9 @@ class AttLoc2D(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -1712,9 +1727,9 @@ class AttLocRec(torch.nn.Module):
         e = self.gvec(torch.tanh(att_h.unsqueeze(1) + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
 
         # weighted sum over flames
@@ -1813,9 +1828,9 @@ class AttCovLoc(torch.nn.Module):
         e = self.gvec(torch.tanh(att_conv + self.pre_compute_enc_h + dec_z_tiled)).squeeze(2)
 
         # NOTE consider zero padding when compute w.
-        # if self.mask is None:
-        #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-        # e.masked_fill_(self.mask, -float('inf'))
+        if self.mask is None:
+            self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+        e.masked_fill_(self.mask, -float('inf'))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
 
@@ -1912,9 +1927,9 @@ class AttMultiHeadDot(torch.nn.Module):
                 batch, 1, self.att_dim_k), dim=2)  # utt x frame
 
             # NOTE consider zero padding when compute w.
-            # if self.mask is None:
-            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            # e.masked_fill_(self.mask, -float('inf'))
+            if self.mask is None:
+                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2017,9 +2032,9 @@ class AttMultiHeadAdd(torch.nn.Module):
                 self.pre_compute_k[h] + self.mlp_q[h](dec_z).view(batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            # if self.mask is None:
-            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            # e.masked_fill_(self.mask, -float('inf'))
+            if self.mask is None:
+                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2141,9 +2156,9 @@ class AttMultiHeadLoc(torch.nn.Module):
                     batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            # if self.mask is None:
-            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            # e.masked_fill_(self.mask, -float('inf'))
+            if self.mask is None:
+                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -2269,9 +2284,9 @@ class AttMultiHeadMultiResLoc(torch.nn.Module):
                     batch, 1, self.att_dim_k))).squeeze(2)
 
             # NOTE consider zero padding when compute w.
-            # if self.mask is None:
-            #     self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
-            # e.masked_fill_(self.mask, -float('inf'))
+            if self.mask is None:
+                self.mask = to_cuda(self, make_pad_mask(enc_hs_len))
+            e.masked_fill_(self.mask, -float('inf'))
             w += [F.softmax(self.scaling * e, dim=1)]
 
             # weighted sum over flames
@@ -3157,25 +3172,39 @@ class Encoder(torch.nn.Module):
 
             xs_pad, ilens = self.enc1(xs_pad, ilens)
 
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp',
                             'vggnbblstm', 'vggnbblstmp', 'vggsjblstm', 'vggresblstm', 'vggdil2blstm', 'vggresdil2blstm',
                             'vgg8blstm']:
             xs_pad, ilens = self.enc1(xs_pad, ilens)
             xs_pad, ilens = self.enc2(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp',
                             'resnbblstm', 'resnbblstmp', 'resorigblstm', 'resorigblstm']:
             xs_pad, ilens = self.enc1(xs_pad, ilens)
             xs_pad, ilens = self.enc2(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp', 'multiVgg8blstmBlstmp',
                             'multiVggblstmpBlstmp', 'multiVggblstmpBlstmpFixed4', 'multiVggblstmBlstmpFixed4']:
             xs_pad1, ilens1 = self.enc11(xs_pad, ilens)
             xs_pad1, ilens1 = self.enc12(xs_pad1, ilens1)
             xs_pad2, ilens2 = self.enc21(xs_pad, ilens)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBlstmpBlstmp4']:
             xs_pad1, ilens1 = self.enc1(xs_pad, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad, ilens)
+
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
 
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBandBlstmpBlstmp']:
@@ -3207,6 +3236,9 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['highBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
@@ -3217,6 +3249,9 @@ class Encoder(torch.nn.Module):
                 gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
                 xs_pad += gauss_noise
             xs_pad, ilens = self.enc1(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['lowBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
             dims = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
@@ -3226,6 +3261,8 @@ class Encoder(torch.nn.Module):
                 gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
                 xs_pad += gauss_noise
             xs_pad, ilens = self.enc1(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH1BlstmpCH2Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # low frequency + 3 pitch
@@ -3234,15 +3271,20 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['amiCH1Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # high frequency + 3 pitch
             xs_pad, ilens = self.enc1(xs_pad[:, :, dims1], ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH2Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims2 = list(range(83, 83 * 2))  # low frequency + 3 pitch
             xs_pad, ilens = self.enc1(xs_pad[:, :, dims2], ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH1VggblstmCH2Vggblstm']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # low frequency + 3 pitch
@@ -3254,6 +3296,9 @@ class Encoder(torch.nn.Module):
             xs_pad2, ilens2 = self.enc21(xs_pad[:, :, dims2], ilens)
             xs_pad2, ilens2 = self.enc22(xs_pad2, ilens2)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
 
         elif self.etype in ['amiCH1Vggblstm']:
@@ -3261,11 +3306,13 @@ class Encoder(torch.nn.Module):
             dims1 = list(range(83))  # high frequency + 3 pitch
             xs_pad, ilens = self.enc11(xs_pad[:, :, dims1], ilens)
             xs_pad, ilens = self.enc12(xs_pad, ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH2Vggblstm']:
             # xs_pad: utt x frame x dim(83)
             dims2 = list(range(83, 83 * 2))  # low frequency + 3 pitch
             xs_pad, ilens = self.enc21(xs_pad[:, :, dims2], ilens)
             xs_pad, ilens = self.enc22(xs_pad, ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         else:
             logging.error(
                 "Error: need to specify an appropriate encoder archtecture")
