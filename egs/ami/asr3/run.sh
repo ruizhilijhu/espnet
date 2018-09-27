@@ -55,12 +55,6 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 opt=adadelta
 epochs=15
 
-# sgd parameters
-lr=1e-3
-lr_decay=1e-1
-mom=0.9
-wd=0
-
 # rnnlm related
 use_wordlm=true     # false means to train/use a character LM
 lm_vocabsize=65000  # effective only for word LMs
@@ -83,31 +77,22 @@ minlenratio=0.0
 ctc_weight=0.3
 recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
 
+# scheduled sampling option
+samp_prob=0.0
+
 # You may set 'mic' to:
 #  ihm [individual headset mic- the default which gives best results]
 #  sdm1 [single distant microphone- the current script allows you only to select
 #        the 1st of 8 microphones]
 #  mdm8 [multiple distant microphones-- currently we only support averaging over
 #       the 8 source microphones].
-#  smdm8 [second multiple distant microphones]
 # ... by calling this script as, for example,
 # ./run.sh --mic sdm1
 # ./run.sh --mic mdm8
-# ./run.sh --mic smdm8
-# ./run.sh --mic sum --stage 0
 mic=ihm
 
 # exp tag
 tag="" # tag for managing experiments.
-
-
-# multl-encoder multi-band
-num_enc=1
-share_ctc=true
-l2_dropout=0.5
-
-# for decoding only ; only works for multi case
-l2_weight=0.5
 
 . utils/parse_options.sh || exit 1;
 
@@ -167,18 +152,6 @@ if [ ${stage} -le 0 ]; then
 	export PATH=${PATH}:$BEAMFORMIT
 	! hash BeamformIt && echo "Missing BeamformIt, run 'cd ../../../tools/kaldi/tools; extras/install_beamformit.sh; cd -;'" && exit 1
 	local/ami_beamform.sh --cmd "$train_cmd" --nj 20 $nmics $AMI_DIR $PROCESSED_AMI_DIR
-    elif [ "$base_mic" == "smdm" ]; then
-        AMI_DIR=/export/a07/xwang/kaldi-chime4/egs/ami/s5/wav_db # another microphone array
-	PROCESSED_AMI_DIR=$AMI_DIR/beamformed
-    	if [ -z $BEAMFORMIT ] ; then
-	    export BEAMFORMIT=$KALDI_ROOT/tools/BeamformIt
-	fi
-	export PATH=${PATH}:$BEAMFORMIT
-	! hash BeamformIt && echo "Missing BeamformIt, run 'cd ../../../tools/kaldi/tools; extras/install_beamformit.sh; cd -;'" && exit 1
-	local/ami_beamform_array2_4mic.sh --cmd "$train_cmd" --nj 20 4 $AMI_DIR $PROCESSED_AMI_DIR
-    elif [ "$base_mic" == "sum" ]; then
-        AMI_DIR=/export/a07/xwang/kaldi-chime4/egs/ami/s5/wav_sum # another microphone array
-	PROCESSED_AMI_DIR=$AMI_DIR/beamformed
     else
 	PROCESSED_AMI_DIR=$AMI_DIR
     fi
@@ -210,12 +183,12 @@ if [ ${stage} -le 1 ]; then
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr2_multi/dump/${train_set}/delta${do_delta}/storage \
+        /export/b{10,11,12,13}/${USER}/espnet-data/egs/ami/asr3/dump/${train_set}/delta${do_delta}/storage \
         ${feat_tr_dir}/storage
     fi
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr2_multi/dump/${train_dev}/delta${do_delta}/storage \
+        /export/b{10,11,12,13}/${USER}/espnet-data/egs/ami/asr3/dump/${train_dev}/delta${do_delta}/storage \
         ${feat_dt_dir}/storage
     fi
     dump.sh --cmd "$train_cmd" --nj 32 --do_delta $do_delta \
@@ -311,12 +284,7 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
 fi
 
 if [ -z ${tag} ]; then
-    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
-
-    if [ $atype == 'enc2_add_l2dp' ]; then
-        expdir=${expdir}_l2attdp${l2_dropout}
-    fi
-
+    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_sampprob${samp_prob}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
     if [ "${lsm_type}" != "" ]; then
         expdir=${expdir}_lsm${lsm_type}${lsm_weight}
     fi
@@ -365,15 +333,7 @@ if [ ${stage} -le 4 ]; then
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
-        --epochs ${epochs} \
-        --lr ${lr} \
-        --lr_decay ${lr_decay} \
-        --mom ${mom} \
-        --wd ${wd} \
-        --num-enc ${num_enc} \
-        --share-ctc ${share_ctc} \
-        --l2-dropout ${l2_dropout}
-
+        --epochs ${epochs}
 fi
 
 if [ ${stage} -le 5 ]; then
