@@ -201,25 +201,26 @@ if [ ${stage} -le 2 ]; then
     echo "stage 2: Dictionary and Json Data Preparation"
     mkdir -p data/lang_1char/
 
-    echo "make a non-linguistic symbol list"
-    cut -f 2- data/${train_set}/text | tr " " "\n" | sort | uniq | grep "<" > ${nlsyms}
-    cat ${nlsyms}
+#    echo "make a non-linguistic symbol list"
+#    cut -f 2- data/${train_set}/text | tr " " "\n" | sort | uniq | grep "<" > ${nlsyms}
+#    echo done
+#    cat ${nlsyms}
 
     echo "make a dictionary"
     echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
-    text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
+    text2token.py -s 1 -n 1 data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
     | sort | uniq | grep -v -e '^\s*$' | awk '{print $0 " " NR+1}' >> ${dict}
     wc -l ${dict}
 
     echo "make json files"
-    data2json.sh --feat ${feat_tr_dir}/feats.scp --nlsyms ${nlsyms} \
+    data2json.sh --feat ${feat_tr_dir}/feats.scp \
          data/${train_set} ${dict} > ${feat_tr_dir}/data.json
-    data2json.sh --feat ${feat_dt_dir}/feats.scp --nlsyms ${nlsyms} \
+    data2json.sh --feat ${feat_dt_dir}/feats.scp \
          data/${train_dev} ${dict} > ${feat_dt_dir}/data.json
     for rtask in ${recog_set}; do
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
         data2json.sh --feat ${feat_recog_dir}/feats.scp \
-            --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
+             data/${rtask} ${dict} > ${feat_recog_dir}/data.json
     done
 fi
 
@@ -248,11 +249,11 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
 	    lmdatadir=data/local/lm_train
 	    lmdict=$dict
 	    mkdir -p ${lmdatadir}
-        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " \
+        text2token.py -s 1 -n 1 data/${train_set}/text | cut -f 2- -d" " \
             > ${lmdatadir}/train.txt
-        text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_dev}/text | cut -f 2- -d" " \
+        text2token.py -s 1 -n 1 data/${train_dev}/text | cut -f 2- -d" " \
             > ${lmdatadir}/valid.txt
-        text2token.py -s 1 -n 1 -l ${nlsyms} data/mdm_multistream_eval/text | cut -f 2- -d" " \
+        text2token.py -s 1 -n 1 data/mdm_multistream_eval/text | cut -f 2- -d" " \
             > ${lmdatadir}/test.txt
     fi
     # use only 1 gpu
@@ -393,7 +394,7 @@ if [ ${stage} -le 5 ]; then
             $recog_opts &
         wait
 
-        score_sclite.sh --wer true --nlsyms ${nlsyms} ${expdir}/${decode_dir} ${dict}
+        score_sclite.sh --wer true ${expdir}/${decode_dir} ${dict}
 
     ) &
     done
