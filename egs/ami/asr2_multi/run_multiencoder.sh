@@ -10,7 +10,7 @@
 # general configuration
 backend=pytorch
 stage=0       # start from -1 if you need to start from data download
-ngpu=-1         # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=0         # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -159,10 +159,10 @@ if [ ${stage} -le 0 ]; then
 fi
 train_set=mdm_multistream_train
 train_dev=mdm_multistream_dev
+train_test=mdm_multistream__eval
 recog_set="mdm_multistream_dev mdm_multistream_eval"
 feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
-
 if [ ${stage} -le 1 ]; then
     ### Task dependent. You have to design training and dev sets by yourself.
     ### But you can utilize Kaldi recipes in most cases
@@ -193,18 +193,11 @@ if [ ${stage} -le 1 ]; then
 fi
 
 dict=data/lang_1char/${train_set}_units.txt
-nlsyms=data/lang_1char/non_lang_syms.txt
-
 echo "dictionary: ${dict}"
 if [ ${stage} -le 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
     mkdir -p data/lang_1char/
-
-#    echo "make a non-linguistic symbol list"
-#    cut -f 2- data/${train_set}/text | tr " " "\n" | sort | uniq | grep "<" > ${nlsyms}
-#    echo done
-#    cat ${nlsyms}
 
     echo "make a dictionary"
     echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
@@ -212,7 +205,7 @@ if [ ${stage} -le 2 ]; then
     | sort | uniq | grep -v -e '^\s*$' | awk '{print $0 " " NR+1}' >> ${dict}
     wc -l ${dict}
 
-    echo "make json files"
+    # make json labels
     data2json.sh --feat ${feat_tr_dir}/feats.scp \
          data/${train_set} ${dict} > ${feat_tr_dir}/data.json
     data2json.sh --feat ${feat_dt_dir}/feats.scp \
@@ -220,7 +213,7 @@ if [ ${stage} -le 2 ]; then
     for rtask in ${recog_set}; do
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
         data2json.sh --feat ${feat_recog_dir}/feats.scp \
-             data/${rtask} ${dict} > ${feat_recog_dir}/data.json
+            data/${rtask} ${dict} > ${feat_recog_dir}/data.json
     done
 fi
 
@@ -238,22 +231,22 @@ mkdir -p ${lmexpdir}
 if [[ ${stage} -le 3 && $use_lm == true ]]; then
     echo "stage 3: LM Preparation"
     if [ $use_wordlm = true ]; then
-	    lmdatadir=data/local/wordlm_train
-	    lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
-	    mkdir -p ${lmdatadir}
+	lmdatadir=data/local/wordlm_train
+	lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
+	mkdir -p ${lmdatadir}
         cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train.txt
         cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
-        cat data/mdm_multistream_eval/text | cut -f 2- -d" " > ${lmdatadir}/test.txt
+        cat data/${train_test}/text | cut -f 2- -d" " > ${lmdatadir}/test.txt
         text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
     else
-	    lmdatadir=data/local/lm_train
-	    lmdict=$dict
-	    mkdir -p ${lmdatadir}
+	lmdatadir=data/local/lm_train
+	lmdict=$dict
+	mkdir -p ${lmdatadir}
         text2token.py -s 1 -n 1 data/${train_set}/text | cut -f 2- -d" " \
             > ${lmdatadir}/train.txt
         text2token.py -s 1 -n 1 data/${train_dev}/text | cut -f 2- -d" " \
             > ${lmdatadir}/valid.txt
-        text2token.py -s 1 -n 1 data/mdm_multistream_eval/text | cut -f 2- -d" " \
+        text2token.py -s 1 -n 1 data/${train_test}/text | cut -f 2- -d" " \
             > ${lmdatadir}/test.txt
     fi
     # use only 1 gpu
@@ -279,7 +272,6 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
         --dict ${lmdict}
 fi
 
-
 if [ -z ${tag} ]; then
     expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
 
@@ -300,6 +292,7 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ]; then
     echo "stage 4: Network Training"
+
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
         asr_train.py \
         --ngpu ${ngpu} \
@@ -401,5 +394,4 @@ if [ ${stage} -le 5 ]; then
     wait
     echo "Finished"
 fi
-
 
