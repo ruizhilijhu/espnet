@@ -65,6 +65,11 @@ lm_epochs=20        # number of epochs
 lm_maxlen=40        # 150 for character LMs
 lm_resume=          # specify a snapshot file to resume LM training
 lmtag=              # tag for managing LMs
+has_fisher_swbd=true
+
+# data
+fisher_dirs="/export/corpora3/LDC/LDC2004T19 /export/corpora3/LDC/LDC2005T19 /export/corpora3/LDC/LDC2004S13 /export/corpora3/LDC/LDC2005S13"
+swbd1_dir=/export/corpora3/LDC/LDC97S62
 
 # decoding parameter
 lm_weight=1.0
@@ -111,6 +116,7 @@ esac
 
 train_set=${mic}_train
 train_dev=${mic}_dev
+train_test=${mic}_eval
 recog_set="${mic}_dev ${mic}_eval"
 
 if [ ${stage} -le -1 ]; then
@@ -227,24 +233,36 @@ if [ -z ${lmtag} ]; then
     if [ $use_wordlm = true ]; then
         lmtag=${lmtag}_word${lm_vocabsize}
     fi
+    if [ $has_fisher_swbd = true ]; then
+        lmtag=${lmtag}_fisher_swbd
+    fi
 fi
 lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
 mkdir -p ${lmexpdir}
 
 if [ ${stage} -le 3 ]; then
     echo "stage 3: LM Preparation"
+
+    if $has_fisher_swbd;then
+    echo "Prepare fisher and switchboard data for LM training"
+    local/fisher_data_prep.sh ${fisher_dirs}
+    local/swbd1_data_download.sh ${swbd1_dir}
+    local/fisher_swbd_prepare_dict.sh
+    chmod 644 data/local/dict_nosp/lexicon0.txt
+    local/swbd1_data_prep.sh ${swbd1_dir}
+    fi
+
     if [ $use_wordlm = true ]; then
         lmdatadir=data/local/wordlm_train
+        [ $has_fisher_swbd = true ] && lmdatadir=${lmdatadir}_fisher_swbd
         lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
         mkdir -p ${lmdatadir}
         cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
 
-
-        # TODO
-#        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z \
-#                | grep -v "<" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
         touch ${lmdatadir}/train_others.txt
-
+        if [ $has_fisher_swbd = true ]; then
+            cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
+        fi
 
         cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
         cat data/${train_test}/text | cut -f 2- -d" " > ${lmdatadir}/test.txt
@@ -252,18 +270,17 @@ if [ ${stage} -le 3 ]; then
         text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
     else
         lmdatadir=data/local/lm_train
+        [ $has_fisher_swbd = true ] && lmdatadir=${lmdatadir}_fisher_swbd
         lmdict=$dict
         mkdir -p ${lmdatadir}
         text2token.py -s 1 -n 1 data/${train_set}/text \
             | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
 
-
-        # TODO
-        zcat ${wsj1}/13-32.1/wsj1/doc/lng_modl/lm_train/np_data/{87,88,89}/*.z \
-            | grep -v "<" | tr [a-z] [A-Z] \
-            | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
         touch ${lmdatadir}/train_others.txt
-
+        if [ $has_fisher_swbd = true ]; then
+            cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] \
+            | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+        fi
 
         text2token.py -s 1 -n 1 data/${train_dev}/text \
             | cut -f 2- -d" " > ${lmdatadir}/valid.txt
