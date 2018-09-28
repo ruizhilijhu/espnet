@@ -3217,13 +3217,13 @@ class Encoder(torch.nn.Module):
 
             if self.addgauss: # decoding stage
                 gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
-                if self.addgauss_type == 'low43':
+                if self.addgauss_type == 'array1':
                     gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     xs_pad1 += gauss_noise
-                elif self.addgauss_type == 'high43':
+                elif self.addgauss_type == 'array2':
                     gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad2 += gauss_noise
-                elif self.addgauss_type == 'all':
+                elif self.addgauss_type == 'arrayall':
                     gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     gauss_noise2 = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad1 += gauss_noise1
