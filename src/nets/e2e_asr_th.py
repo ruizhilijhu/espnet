@@ -3289,8 +3289,8 @@ class Encoder(torch.nn.Module):
                         "Error: need to specify an appropriate addgauss type")
                     sys.exit()
 
-            xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
-            xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
+            xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
+            xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
             xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
             xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
