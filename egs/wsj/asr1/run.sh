@@ -323,7 +323,6 @@ if [ ${stage} -le 4 ]; then
         --num-enc ${num_enc} \
         --share-ctc ${share_ctc} \
         --l2-dropout ${l2_dropout}
-
 fi
 
 if [ ${stage} -le 5 ]; then

@@ -88,6 +88,21 @@ def make_pad_mask(lengths):
 
     return mask
 
+def fill_padded_part(xs, ilens, fill_value):
+    """Fucntion to fill padded part with selected value
+
+    :param torch.Tensor xs: tensor (B, Tmax, ...)
+    :param torch.Tensor ilens:  list of lengths (B)
+    :param float fill_value:  value to fill padded part
+    :return: xs whose padded parts are filled by fill_value
+    """
+    assert xs.size(0) == len(ilens)
+    new_xs = xs.new(*xs.size()).fill_(fill_value)
+    for idx, l in enumerate(ilens):
+        new_xs[idx, :l] = xs[idx, :l]
+
+    return new_xs
+
 
 def th_accuracy(pad_outputs, pad_targets, ignore_label):
     """Function to calculate accuracy
@@ -3157,25 +3172,39 @@ class Encoder(torch.nn.Module):
 
             xs_pad, ilens = self.enc1(xs_pad, ilens)
 
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['vggblstm', 'vggblstmp', 'vggbnblstm', 'vggbnblstmp', 'vggceilblstm', 'vggceilblstmp',
                             'vggnbblstm', 'vggnbblstmp', 'vggsjblstm', 'vggresblstm', 'vggdil2blstm', 'vggresdil2blstm',
                             'vgg8blstm']:
             xs_pad, ilens = self.enc1(xs_pad, ilens)
             xs_pad, ilens = self.enc2(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['resblstm', 'resblstmp', 'resbnblstm', 'resbnblstmp', 'resceilblstm', 'resceilblstmp',
                             'resnbblstm', 'resnbblstmp', 'resorigblstm', 'resorigblstm']:
             xs_pad, ilens = self.enc1(xs_pad, ilens)
             xs_pad, ilens = self.enc2(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['multiVggblstmBlstmp', 'multiVggdil2blstmBlstmp', 'multiVgg8blstmBlstmp',
                             'multiVggblstmpBlstmp', 'multiVggblstmpBlstmpFixed4', 'multiVggblstmBlstmpFixed4']:
             xs_pad1, ilens1 = self.enc11(xs_pad, ilens)
             xs_pad1, ilens1 = self.enc12(xs_pad1, ilens1)
             xs_pad2, ilens2 = self.enc21(xs_pad, ilens)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBlstmpBlstmp4']:
             xs_pad1, ilens1 = self.enc1(xs_pad, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad, ilens)
+
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
 
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['multiBandBlstmpBlstmp']:
@@ -3207,6 +3236,9 @@ class Encoder(torch.nn.Module):
             xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['highBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
@@ -3217,6 +3249,9 @@ class Encoder(torch.nn.Module):
                 gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
                 xs_pad += gauss_noise
             xs_pad, ilens = self.enc1(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
+
         elif self.etype in ['lowBandBlstmp']:
             # xs_pad: utt x frame x dim(83)
             dims = list(range(40)) + list(range(80, 83))  # low frequency + 3 pitch
@@ -3226,23 +3261,51 @@ class Encoder(torch.nn.Module):
                 gauss_noise = gauss_dist.sample(xs_pad.size()).squeeze(len(xs_pad.size()))
                 xs_pad += gauss_noise
             xs_pad, ilens = self.enc1(xs_pad, ilens)
+
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH1BlstmpCH2Blstmp']:
             # xs_pad: utt x frame x dim(83)
-            dims1 = list(range(83))  # low frequency + 3 pitch
-            dims2 = list(range(83, 83 * 2))  # high frequency + 3 pitch
+            dims1 = list(range(83))  # array 1
+            dims2 = list(range(83, 83 * 2))  # array 2
+
+            xs_pad1 = xs_pad[:, :, dims1]
+            xs_pad2 = xs_pad[:, :, dims2]
+
+            if self.addgauss: # decoding stage
+                gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
+                if self.addgauss_type == 'array1':
+                    gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    xs_pad1 += gauss_noise
+                elif self.addgauss_type == 'array2':
+                    gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad2 += gauss_noise
+                elif self.addgauss_type == 'arrayall':
+                    gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
+                    gauss_noise2 = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
+                    xs_pad1 += gauss_noise1
+                    xs_pad2 += gauss_noise2
+                else:
+                    logging.error(
+                        "Error: need to specify an appropriate addgauss type")
+                    sys.exit()
 
             xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
             xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
+
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
 
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
         elif self.etype in ['amiCH1Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # high frequency + 3 pitch
             xs_pad, ilens = self.enc1(xs_pad[:, :, dims1], ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH2Blstmp']:
             # xs_pad: utt x frame x dim(83)
             dims2 = list(range(83, 83 * 2))  # low frequency + 3 pitch
             xs_pad, ilens = self.enc1(xs_pad[:, :, dims2], ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH1VggblstmCH2Vggblstm']:
             # xs_pad: utt x frame x dim(83)
             dims1 = list(range(83))  # low frequency + 3 pitch
@@ -3254,6 +3317,9 @@ class Encoder(torch.nn.Module):
             xs_pad2, ilens2 = self.enc21(xs_pad[:, :, dims2], ilens)
             xs_pad2, ilens2 = self.enc22(xs_pad2, ilens2)
 
+            xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
+            xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
+
             return (xs_pad1, xs_pad2), (ilens1, ilens2)
 
         elif self.etype in ['amiCH1Vggblstm']:
@@ -3261,11 +3327,13 @@ class Encoder(torch.nn.Module):
             dims1 = list(range(83))  # high frequency + 3 pitch
             xs_pad, ilens = self.enc11(xs_pad[:, :, dims1], ilens)
             xs_pad, ilens = self.enc12(xs_pad, ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         elif self.etype in ['amiCH2Vggblstm']:
             # xs_pad: utt x frame x dim(83)
             dims2 = list(range(83, 83 * 2))  # low frequency + 3 pitch
             xs_pad, ilens = self.enc21(xs_pad[:, :, dims2], ilens)
             xs_pad, ilens = self.enc22(xs_pad, ilens)
+            xs_pad = fill_padded_part(xs_pad, ilens, 0.0)
         else:
             logging.error(
                 "Error: need to specify an appropriate encoder archtecture")

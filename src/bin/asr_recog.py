@@ -77,7 +77,7 @@ def main():
     parser.add_argument('--addgauss-std', type=float, default=1,
                         help='Standard deviation of added Gaussian noise')
     parser.add_argument('--addgauss-type', type=str, default='all',
-                        choices=['all','high43','low43'],
+                        choices=['all','high43','low43','array1','array2','arrayall'],
                         help='Type of adding gaussian noise')
 
     # multiencoder multibands
