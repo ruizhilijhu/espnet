@@ -3217,13 +3217,13 @@ class Encoder(torch.nn.Module):
 
             if self.addgauss: # decoding stage
                 gauss_dist = tdist.Normal(torch.tensor([self.addgauss_mean]), torch.tensor([self.addgauss_std]))
-                if self.addgauss_type == 'array1':
+                if self.addgauss_type == 'low43':
                     gauss_noise = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     xs_pad1 += gauss_noise
-                elif self.addgauss_type == 'array2':
+                elif self.addgauss_type == 'high43':
                     gauss_noise = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad2 += gauss_noise
-                elif self.addgauss_type == 'arrayall':
+                elif self.addgauss_type == 'all':
                     gauss_noise1 = gauss_dist.sample(xs_pad1.size()).squeeze(len(xs_pad1.size()))
                     gauss_noise2 = gauss_dist.sample(xs_pad2.size()).squeeze(len(xs_pad2.size()))
                     xs_pad1 += gauss_noise1
@@ -3289,8 +3289,8 @@ class Encoder(torch.nn.Module):
                         "Error: need to specify an appropriate addgauss type")
                     sys.exit()
 
-            xs_pad1, ilens1 = self.enc1(xs_pad[:, :, dims1], ilens)
-            xs_pad2, ilens2 = self.enc2(xs_pad[:, :, dims2], ilens)
+            xs_pad1, ilens1 = self.enc1(xs_pad1, ilens)
+            xs_pad2, ilens2 = self.enc2(xs_pad2, ilens)
 
             xs_pad1 = fill_padded_part(xs_pad1, ilens1, 0.0)
             xs_pad2 = fill_padded_part(xs_pad2, ilens2, 0.0)
