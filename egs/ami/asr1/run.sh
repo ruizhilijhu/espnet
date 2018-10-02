@@ -42,8 +42,8 @@ aconv_filts=100
 mtlalpha=0.5 # TODO: check oring 0.5 and wsj 0.2
 
 # label smoothing
-lsm_type=unigram # todo: orig empty, wsj unigtam
-lsm_weight=0.05
+lsm_type='' # todo: orig empty, wsj unigtam
+lsm_weight=0.0
 
 # minibatch related
 batchsize=30
@@ -53,6 +53,12 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 # optimization related
 opt=adadelta
 epochs=15
+
+# sgd parameters
+lr=1e-3
+lr_decay=1e-1
+mom=0.9
+wd=0
 
 # rnnlm related
 use_wordlm=true     # false means to train/use a character LM
@@ -65,7 +71,8 @@ lm_epochs=20        # number of epochs
 lm_maxlen=40        # 150 for character LMs
 lm_resume=          # specify a snapshot file to resume LM training
 lmtag=              # tag for managing LMs
-has_fisher_swbd=true
+has_fisher_swbd=  # none, fisher, swbd, fisher_swbd
+use_lm=true
 
 # data
 fisher_dirs="/export/corpora3/LDC/LDC2004T19 /export/corpora3/LDC/LDC2005T19 /export/corpora3/LDC/LDC2004S13 /export/corpora3/LDC/LDC2005S13"
@@ -74,7 +81,7 @@ swbd1_dir=/export/corpora3/LDC/LDC97S62
 # decoding parameter
 lm_weight=1.0
 beam_size=30
-penalty=0.0 # TODO: orignal:0.2, wsj 0.0
+penalty=0.2 # TODO: orignal:0.2, wsj 0.0
 maxlenratio=0.0
 minlenratio=0.0
 ctc_weight=0.3
@@ -93,6 +100,21 @@ mic=ihm
 
 # exp tag
 tag="" # tag for managing experiments.
+
+
+# multl-encoder multi-band
+num_enc=1
+share_ctc=true
+l2_dropout=0.5
+
+# for decoding only ; only works for multi case
+l2_weight=0.5
+
+# add gaussian noise to the features (only works for encoder type: 'multiBandBlstmpBlstmp', 'blstm', 'blstmp', 'blstmss', 'blstmpbn', 'vgg', 'rcnn', 'rcnnNObn', 'rcnnDp', 'rcnnDpNObn')
+addgauss=false
+addgauss_mean=0
+addgauss_std=1
+addgauss_type=all # all, high43 low43
 
 . utils/parse_options.sh || exit 1;
 
@@ -183,12 +205,12 @@ if [ ${stage} -le 1 ]; then
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{14,15,16,17}/${USER}/espnet-data/egs/ami/asr1/dump/${train_set}/delta${do_delta}/storage \
+        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr1/dump/${train_set}/delta${do_delta}/storage \
         ${feat_tr_dir}/storage
     fi
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{14,15,16,17}/${USER}/espnet-data/egs/ami/asr1/dump/${train_dev}/delta${do_delta}/storage \
+        /export/b{04,05,06,07}/${USER}/espnet-data/egs/ami/asr1/dump/${train_dev}/delta${do_delta}/storage \
         ${feat_dt_dir}/storage
     fi
     dump.sh --cmd "$train_cmd" --nj 32 --do_delta $do_delta \
@@ -233,17 +255,17 @@ if [ -z ${lmtag} ]; then
     if [ $use_wordlm = true ]; then
         lmtag=${lmtag}_word${lm_vocabsize}
     fi
-    if [ $has_fisher_swbd = true ]; then
-        lmtag=${lmtag}_fisher_swbd
+    if [ ! -z $has_fisher_swbd ]; then
+        lmtag=${lmtag}_$has_fisher_swbd
     fi
 fi
 lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
 mkdir -p ${lmexpdir}
 
-if [ ${stage} -le 3 ]; then
+if [[ ${stage} -le 3 && $use_lm == true ]]; then
     echo "stage 3: LM Preparation"
 
-    if $has_fisher_swbd;then
+    if [ ! -z $has_fisher_swbd ];then
     echo "Prepare fisher and switchboard data for LM training"
     local/fisher_data_prep.sh ${fisher_dirs}
     local/swbd1_data_download.sh ${swbd1_dir}
@@ -254,13 +276,17 @@ if [ ${stage} -le 3 ]; then
 
     if [ $use_wordlm = true ]; then
         lmdatadir=data/local/wordlm_train
-        [ $has_fisher_swbd = true ] && lmdatadir=${lmdatadir}_fisher_swbd
+        [ ! -z $has_fisher_swbd ] && lmdatadir=${lmdatadir}_${has_fisher_swbd}
         lmdict=${lmdatadir}/wordlist_${lm_vocabsize}.txt
         mkdir -p ${lmdatadir}
         cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
 
         touch ${lmdatadir}/train_others.txt
-        if [ $has_fisher_swbd = true ]; then
+        if [ $has_fisher_swbd == 'fisher' ]; then # TODO
+            cat data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
+        elif [ $has_fisher_swbd == 'swbd' ]; then
+            cat data/train_swbd/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
+        elif [ $has_fisher_swbd == 'fisher_swbd' ]; then
             cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
         fi
 
@@ -270,14 +296,20 @@ if [ ${stage} -le 3 ]; then
         text2vocabulary.py -s ${lm_vocabsize} -o ${lmdict} ${lmdatadir}/train.txt
     else
         lmdatadir=data/local/lm_train
-        [ $has_fisher_swbd = true ] && lmdatadir=${lmdatadir}_fisher_swbd
+        [ ! -z $has_fisher_swbd ] && lmdatadir=${lmdatadir}_${has_fisher_swbd}
         lmdict=$dict
         mkdir -p ${lmdatadir}
         text2token.py -s 1 -n 1 data/${train_set}/text \
             | cut -f 2- -d" " > ${lmdatadir}/train_trans.txt
 
         touch ${lmdatadir}/train_others.txt
-        if [ $has_fisher_swbd = true ]; then
+        if [ $has_fisher_swbd == 'fisher' ]; then # TODO
+            cat data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] \
+            | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+        elif [ $has_fisher_swbd == 'swbd' ]; then
+            cat data/train_swbd/text | grep -v "]" | tr [a-z] [A-Z] \
+            | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+        elif [ $has_fisher_swbd == 'fisher_swbd' ]; then
             cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] \
             | text2token.py -n 1 | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
         fi
@@ -312,7 +344,12 @@ if [ ${stage} -le 3 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}
+    expdir=exp/${train_set}_${backend}_${etype}_e${elayers}_subsample${subsample}_unit${eunits}_proj${eprojs}_d${dlayers}_unit${dunits}_${atype}_aconvc${aconv_chans}_aconvf${aconv_filts}_mtlalpha${mtlalpha}_${opt}_bs${batchsize}_mli${maxlen_in}_mlo${maxlen_out}_shareCtc${share_ctc}
+
+    if [ $atype == 'enc2_add_l2dp' ]; then
+        expdir=${expdir}_l2attdp${l2_dropout}
+    fi
+
     if [ "${lsm_type}" != "" ]; then
         expdir=${expdir}_lsm${lsm_type}${lsm_weight}
     fi
@@ -361,7 +398,14 @@ if [ ${stage} -le 4 ]; then
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
-        --epochs ${epochs}
+        --epochs ${epochs} \
+        --lr ${lr} \
+        --lr_decay ${lr_decay} \
+        --mom ${mom} \
+        --wd ${wd} \
+        --num-enc ${num_enc} \
+        --share-ctc ${share_ctc} \
+        --l2-dropout ${l2_dropout}
 fi
 
 if [ ${stage} -le 5 ]; then
@@ -370,12 +414,25 @@ if [ ${stage} -le 5 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}
-        if [ $use_wordlm = true ]; then
-            recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}
+
+        if [ $use_lm = true ]; then
+            decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
+            if [ $use_wordlm = true ]; then
+                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+            else
+                recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+            fi
         else
-            recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
+            echo "No language model is involved."
+            recog_opts=""
         fi
+
+        if [ $addgauss = true ]; then
+            decode_dir=${decode_dir}_gauss-${addgauss_type}-mean${addgauss_mean}-std${addgauss_std}
+            recog_opts+=" --addgauss true --addgauss-mean ${addgauss_mean} --addgauss-std ${addgauss_std} --addgauss-type ${addgauss_type}"
+        fi
+
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
@@ -388,6 +445,7 @@ if [ ${stage} -le 5 ]; then
             asr_recog.py \
             --ngpu ${ngpu} \
             --backend ${backend} \
+            --debugmode ${debugmode} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
             --result-label ${expdir}/${decode_dir}/data.JOB.json \
             --model ${expdir}/results/${recog_model}  \
