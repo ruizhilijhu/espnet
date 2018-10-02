@@ -159,7 +159,7 @@ if [ ${stage} -le 0 ]; then
 fi
 train_set=mdm_multistream_train
 train_dev=mdm_multistream_dev
-train_test=mdm_multistream__eval
+train_test=mdm_multistream_eval
 recog_set="mdm_multistream_dev mdm_multistream_eval"
 feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
