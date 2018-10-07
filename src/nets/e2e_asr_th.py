@@ -1043,8 +1043,8 @@ class Enc2AttAdd(torch.nn.Module):
         # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
         # c_l2 = torch.sum(self.enc_h_l2 * w_l2.view(batch, self.h_length_l2, 1), dim=1)
         c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
-        logging.info(self.__class__.__name__ + ' level two attention weight: ')
-        logging.warning(w_l2[0][0])  # print the l2-weight for the first stream
+        # logging.info(self.__class__.__name__ + ' level two attention weight: ')
+        # logging.warning(w_l2[0][0])  # print the l2-weight for the first stream
 
         return c_l2, [w_l1, w_l2]
 
@@ -1206,8 +1206,8 @@ class Enc2AttAddLinProj(torch.nn.Module): # TODO: need to be updated with the ne
 
         if self.apply_tanh: c_l2 = self.tanh(c_l2)
 
-        logging.info(self.__class__.__name__ + ' level two attention weight: ')
-        logging.warning(w_l2[0][0])  # print the l2-weight for the first stream
+        # logging.info(self.__class__.__name__ + ' level two attention weight: ')
+        # logging.warning(w_l2[0][0])  # print the l2-weight for the first stream
 
         return c_l2, [w_l1, w_l2]
 
@@ -2513,7 +2513,6 @@ class Decoder(torch.nn.Module):
                     ctc_beam = lpz.shape[-1]
             hyps = [hyp]
             ended_hyps = []
-            init_hyp = hyp.copy()
         else:
             logging.info('input lengths: ' + str([h[idx].size(0) for idx in range(self.num_enc)]))
 
@@ -2559,7 +2558,6 @@ class Decoder(torch.nn.Module):
                     ctc_beam = lpz[0].shape[-1]
             hyps = [hyp]
             ended_hyps = []
-            init_hyp = hyp.copy()
 
         for i in six.moves.range(maxlen):
             logging.debug('position ' + str(i))
