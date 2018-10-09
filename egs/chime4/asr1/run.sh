@@ -9,7 +9,7 @@
 # general configuration
 backend=chainer
 stage=0        # start from 0 if you need to start from data preparation
-ngpu=0         # number of gpus ("0" us es cpu, otherwise use gpu)
+ngpu=0         # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -23,27 +23,27 @@ do_delta=false
 # network architecture
 # encoder related
 etype=vggblstmp     # encoder architecture type
-elayers=3
-eunits=1024
-eprojs=1024
-subsample=1_1_1 # skip every n frame from input to nth layers
+elayers=4
+eunits=320
+eprojs=320
+subsample=1_2_2_1_1 # skip every n frame from input to nth layers
 # decoder related
 dlayers=1
-dunits=1024
+dunits=300
 # attention related
 atype=location
-adim=1024
+adim=320
 awin=5
 aheads=4
 aconv_chans=10
 aconv_filts=100
 
 # hybrid CTC/attention
-mtlalpha=0.5 # TODO: wsj 0.2; orig:0.5
+mtlalpha=0.2
 
-# label smoothing # TODO: orign n'' and 0; wsj: unigram 0.05
-lsm_type=''
-lsm_weight=0.0
+# label smoothing
+lsm_type=unigram
+lsm_weight=0.05
 
 # minibatch related
 batchsize=25
@@ -52,7 +52,7 @@ maxlen_out=150 # if output length > maxlen_out, batchsize is automatically reduc
 
 # optimization related
 opt=adadelta
-epochs=10 # TODO: wsj 15, orig 10
+epochs=15
 
 # sgd parameters
 lr=1e-3
@@ -98,6 +98,7 @@ l2_dropout=0.5
 
 # for decoding only ; only works for multi case
 l2_weight=0.5
+ctc_l2w=0.5
 
 # add gaussian noise to the features (only works for encoder type: 'multiBandBlstmpBlstmp', 'blstm', 'blstmp', 'blstmss', 'blstmpbn', 'vgg', 'rcnn', 'rcnnNObn', 'rcnnDp', 'rcnnDpNObn')
 addgauss=false
@@ -310,6 +311,7 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ]; then
     echo "stage 4: Network Training"
+
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
         asr_train.py \
         --ngpu ${ngpu} \
@@ -363,6 +365,10 @@ if [ ${stage} -le 5 ]; then
         decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}
         # TODO delete  rnnlm${lm_weight}_${lmtag}
 
+        if [ "${ctc_l2w}" != "0.5" ] && [ "${num_enc}" != "1" ]; then
+            decode_dir=${decode_dir}_ctcl2w${ctc_l2w}
+        fi
+
         if [ $use_lm = true ]; then
             decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
             if [ $use_wordlm = true ]; then
@@ -402,6 +408,7 @@ if [ ${stage} -le 5 ]; then
             --minlenratio ${minlenratio} \
             --ctc-weight ${ctc_weight} \
             --lm-weight ${lm_weight} \
+            --ctc-l2w ${ctc_l2w} \
             $recog_opts &
         wait
 
