@@ -106,6 +106,8 @@ addgauss_mean=0
 addgauss_std=1
 addgauss_type=all # all, high43 low43
 
+lm_decode_epoch=""
+
 . utils/parse_options.sh || exit 1;
 
 . ./path.sh
@@ -349,7 +351,13 @@ if [ ${stage} -le 5 ]; then
         if [ $use_lm = true ]; then
             decode_dir=${decode_dir}_rnnlm${lm_weight}_${lmtag}
             if [ $use_wordlm = true ]; then
-                recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+                if [ "$lm_decode_epoch" == "" ]; then
+                    recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
+                else
+                    recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.${lm_decode_epoch}"
+                    decode_dir=${decode_dir}_lmepoch${lm_decode_epoch}
+                fi
+
             else
                 recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
             fi

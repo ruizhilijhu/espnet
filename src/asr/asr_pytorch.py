@@ -450,6 +450,35 @@ def recog(args):
             logging.info('(%d/%d) decoding ' + name, idx, len(js.keys()))
             feat = kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
             y = [int(i) for i in js[name]['output'][0]['tokenid'].split()] # y is reference tokenid list
+
+            # # this is the function to get multi att for one utternace during decoding
+            # # manually switch on to get att_ws for one utterance 
+            #
+            # def to_cuda(m, x):
+            #     """Function to send tensor into corresponding device
+            #
+            #     :param torch.nn.Module m: torch module
+            #     :param torch.Tensor x: torch tensor
+            #     :return: torch tensor located in the same place as torch module
+            #     :rtype: torch.Tensor
+            #     """
+            #     assert isinstance(m, torch.nn.Module)
+            #     device = next(m.parameters()).device
+            #     return x.to(device)
+            #
+            # h = to_cuda(model, torch.from_numpy(
+            #     np.array(feat, dtype=np.float32)))
+            # y = to_cuda(model, torch.from_numpy(
+            #     np.array(y, dtype=np.int32)).long())
+            # hlen = to_cuda(model, torch.from_numpy(np.array([feat.shape[0],], dtype=np.int32)))
+            #
+            # if hasattr(model, "module"):
+            #     att_vis_fn = model.module.predictor.calculate_all_attentions
+            # else:
+            #     att_vis_fn = model.predictor.calculate_all_attentions
+            # att_ws = att_vis_fn(h.unsqueeze(0), hlen, y.unsqueeze(0))
+            #
+
             nbest_hyps = e2e.recognize(feat, y, args, train_args.char_list, rnnlm)
             # nbest_hyps: list of hyps
             # hyp: {'ctc_score_prev', 'c_prev', 'z_prev', 'a_prev', 'ctc_state_prev', 'yseq', 'score'}

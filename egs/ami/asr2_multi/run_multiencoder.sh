@@ -72,6 +72,7 @@ lm_maxlen=40        # 150 for character LMs
 lm_resume=          # specify a snapshot file to resume LM training
 lmtag=              # tag for managing LMs
 has_fisher_swbd=  # ''[empty], fisher, swbd, fisher_swbd
+lm_learnrate=1.0
 use_lm=true
 
 # lm data
@@ -227,6 +228,9 @@ fi
 # you can skip this and remove --rnnlm option in the recognition (stage 5)
 if [ -z ${lmtag} ]; then
     lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}
+    if [ "$lm_opt" == "sgd" ]; then
+        lmtag=${lmtag}_lr${lm_learnrate}
+    fi
     if [ $use_wordlm = true ]; then
         lmtag=${lmtag}_word${lm_vocabsize}
     fi
@@ -263,6 +267,19 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
             cat data/train_swbd/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
         elif [ $has_fisher_swbd == 'fisher_swbd' ]; then
             cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] > ${lmdatadir}/train_others.txt
+
+        elif [ $has_fisher_swbd == '3ami_1swbd' ]; then
+            cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+            cat data/${train_set}/text | cut -f 2- -d" " >> ${lmdatadir}/train_others.txt
+            cat data/train_swbd/text | grep -v "]" | tr [a-z] [A-Z] >> ${lmdatadir}/train_others.txt
+        elif [ $has_fisher_swbd == '6ami_2swbd_fisher' ]; then
+            cat data/${train_set}/text | cut -f 2- -d" " > ${lmdatadir}/train_others.txt
+            cat data/${train_set}/text | cut -f 2- -d" " >> ${lmdatadir}/train_others.txt
+            cat data/${train_set}/text | cut -f 2- -d" " >> ${lmdatadir}/train_others.txt
+            cat data/${train_set}/text | cut -f 2- -d" " >> ${lmdatadir}/train_others.txt
+            cat data/${train_set}/text | cut -f 2- -d" " >> ${lmdatadir}/train_others.txt
+            cat data/train_swbd/text | grep -v "]" | tr [a-z] [A-Z] >> ${lmdatadir}/train_others.txt
+            cat data/train_swbd/text data/train_fisher/text | grep -v "]" | tr [a-z] [A-Z] >> ${lmdatadir}/train_others.txt
         fi
 
         cat data/${train_dev}/text | cut -f 2- -d" " > ${lmdatadir}/valid.txt
@@ -315,6 +332,7 @@ if [[ ${stage} -le 3 && $use_lm == true ]]; then
         --batchsize ${lm_batchsize} \
         --epoch ${lm_epochs} \
         --maxlen ${lm_maxlen} \
+        --learnrate ${lm_learnrate} \
         --dict ${lmdict}
 fi
 

@@ -81,16 +81,6 @@ bpemode=unigram
 # exp tag
 tag="" # tag for managing experiments.
 
-# multl-encoder multi-band
-numEncStreams=1
-numBands=1
-
-# for decoding only ; only works for multi case
-addGaussNoise=1
-l2weight=0.5
-
-
-
 . utils/parse_options.sh || exit 1;
 
 . ./path.sh
@@ -274,11 +264,7 @@ if [ ${stage} -le 4 ]; then
         --maxlen-in ${maxlen_in} \
         --maxlen-out ${maxlen_out} \
         --opt ${opt} \
-        --epochs ${epochs} \
-        --numEncStreams ${numEncStreams} \
-        --numBands ${numBands} \
-        --l2weight ${l2weight} \
-        --addGaussNoise ${addGaussNoise}
+        --epochs ${epochs}
 fi
 
 if [ ${stage} -le 5 ]; then
@@ -310,8 +296,6 @@ if [ ${stage} -le 5 ]; then
             --ctc-weight ${ctc_weight} \
             --rnnlm ${lmexpdir}/rnnlm.model.best \
             --lm-weight ${lm_weight} \
-            --addGaussNoise ${addGaussNoise} \
-            --l2weight ${l2weight} \
             &
         wait
 

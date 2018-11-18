@@ -117,10 +117,10 @@ set -e
 set -u
 set -o pipefail
 
-train_set=train_si284_mfcc_fdlp
-train_dev=test_dev93_mfcc_fdlp
-train_test=test_eval92_mfcc_fdlp
-recog_set="test_dev93_mfcc_fdlp test_eval92_mfcc_fdlp"
+train_set=train_si284_fbank_fdlp
+train_dev=test_dev93_fbank_fdlp
+train_test=test_eval92_fbank_fdlp
+recog_set="test_dev93_fbank_fdlp test_eval92_fbank_fdlp"
 
 if [ ${stage} -le 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
