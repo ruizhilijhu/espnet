@@ -69,6 +69,22 @@ def pad_list(xs, pad_value):
 
     return pad
 
+def unpad_list(xpads, xlens):
+    """Function to pad values
+
+    :param padded tensor (B, Lmax, D)
+    :param tensor (B,)
+    :return: list of torch.Tensor [(L_1, D), (L_2, D), ..., (L_B, D)]
+    :rtype: list xs
+    """
+
+    xs = pack_padded_sequence(xpads, xlens, batch_first=True).data
+    assert xs.size()[0] == sum(xlens)
+    es = torch.cumsum(xlens, 0)
+    ss = es - xlens
+
+    xs = [xs[ss[i]:es[i],:] for i in range(len(xlens))]
+    return xs
 
 def make_pad_mask(lengths):
     """Function to make mask tensor containing indices of padded part
@@ -537,6 +553,36 @@ class E2E(torch.nn.Module):
             att_ws = self.dec.calculate_all_attentions(hpad, hlens, ys_pad)
 
         return att_ws
+
+
+    def bnf(self, xs, args):
+        '''E2E extract bottleneck features
+
+        :param list of ndarray x: list of input acoustic feature (T, D)
+        :param namespace args: argument namespace containing options
+        :return: bottleneck features
+        :rtype: ndarray
+        '''
+        prev = self.training
+        self.eval()
+        # subsample frame
+        xs = [xx[::self.subsample[0], :] for xx in xs]
+        ilens = np.fromiter((xx.shape[0] for xx in xs), dtype=np.int64)
+        hs = [to_cuda(self, torch.from_numpy(np.array(xx, dtype=np.float32)))
+              for xx in xs]
+
+        # 1. encoder
+        xpad = pad_list(hs, 0.0)
+
+        hpad, hlens = self.enc(xpad, ilens)
+
+        bnfs = unpad_list(hpad.cpu(), hlens.cpu())
+        bnfs = [bnf.numpy() for bnf in bnfs]
+
+        if prev:
+            self.train()
+
+        return bnfs
 
 
 # ------------- CTC Network --------------------------------------------------------------------------------------------
