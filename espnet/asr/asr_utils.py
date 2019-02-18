@@ -112,6 +112,33 @@ def load_inputs_and_targets(batch):
 
     return xs, ys
 
+def load_inputs_and_targets_pmerr(batch, label_type='wer'):
+    """Function to load inputs and targets from list of dicts
+
+    :param list batch: list of dict which is subset of loaded data.json
+    :param pm_out_type: error type: 'wer', 'cer',
+    :return: list of input feature sequences [(T_1, D), (T_2, D), ..., (T_B, D)]
+    :rtype: list of float ndarray
+    :return: list of wer/cer  [(L_1), (L_2), ..., (L_B)]
+    :rtype: list of float ndarray
+    """
+    # load acoustic features and target sequence of token ids
+    xs = [kaldi_io_py.read_mat(b[1]['input'][0]['feat']) for b in batch]
+    ys = [b[1]['output'][0][label_type].split() for b in batch]
+
+    # get index of non-zero length samples
+    nonzero_idx = filter(lambda i: len(ys[i]) > 0, range(len(xs)))
+    # sort in input lengths
+    nonzero_sorted_idx = sorted(nonzero_idx, key=lambda i: -len(xs[i]))
+    if len(nonzero_sorted_idx) != len(xs):
+        logging.warning('Target sequences include empty tokenid (batch %d -> %d).' % (
+            len(xs), len(nonzero_sorted_idx)))
+
+    # remove zero-length samples
+    xs = [xs[i] for i in nonzero_sorted_idx]
+    ys = [np.clip(np.fromiter(map(float, ys[i]), dtype=np.float64), 0, 1) for i in nonzero_sorted_idx]
+
+    return xs, ys
 
 # * -------------------- chainer extension related -------------------- *
 class CompareValueTrigger(object):
@@ -484,5 +511,31 @@ def add_results_to_json(js, nbest_hyps, char_list):
         if n == 1:
             logging.info('groundtruth: %s' % out_dic['text'])
             logging.info('prediction : %s' % out_dic['rec_text'])
+
+    return new_js
+
+
+def add_results_to_json_pmerr(js, y, label_type):
+    """Function to add pmerr results to json
+
+    :param dict js: groundtruth utterance dict
+    :param float y: prediction
+    """
+    # copy old json info
+    new_js = dict()
+    new_js['utt2spk'] = js['utt2spk']
+    new_js['output'] = []
+
+
+    # copy ground-truth
+    out_dic = dict(js['output'][0].items())
+
+    # add recognition results
+    out_dic['rec_{}'.format(label_type)] = y
+
+    new_js['output'].append(out_dic)
+
+    logging.info('groundtruth: %s' % out_dic[label_type])
+    logging.info('prediction : %s' % out_dic['rec_{}'.format(label_type)])
 
     return new_js

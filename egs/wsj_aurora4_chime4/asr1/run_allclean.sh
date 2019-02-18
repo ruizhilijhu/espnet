@@ -99,28 +99,24 @@ set -e
 set -u
 set -o pipefail
 
-# data (asr)
-train_set=wsj_train_si284-aurora4_train_si84_multi
-train_dev=wsj_test_dev93-aurora4_dev_0330
-recog_set="wsj_test_eval92 \
+# data used for asr
+train_set=wsj_train_si284-aurora4_train_si84_clean
+train_dev=wsj_test_dev93-chime4_dt05_orig_clean
+recog_set="wsj_test_eval92 chime4_et05_real_isolated_1ch_track chime4_et05_simu_isolated_1ch_track" # will add aurora4 test data in the following
+
+# dir info for each dataset
+chime4_dirs="\
+chime4_tr05_real_isolated_1ch_track chime4_tr05_simu_isolated_1ch_track \
+chime4_dt05_real_isolated_1ch_track chime4_dt05_simu_isolated_1ch_track \
 chime4_et05_real_isolated_1ch_track chime4_et05_simu_isolated_1ch_track \
-aurora4_test_eval92_street_wv1 aurora4_test_eval92_street_wv2 \
-aurora4_test_eval92_airport_wv1 aurora4_test_eval92_airport_wv2 \
-aurora4_test_eval92_train_wv1 aurora4_test_eval92_train_wv2 \
-aurora4_test_eval92_restaurant_wv1 aurora4_test_eval92_restaurant_wv2 \
-aurora4_test_eval92_babble_wv1 aurora4_test_eval92_babble_wv2 \
-aurora4_test_eval92_car_wv1 aurora4_test_eval92_car_wv2 \
-aurora4_test_eval92_clean_wv1 aurora4_test_eval92_clean_wv2"
-
-train_dirs="wsj_train_si284 aurora4_train_si84_multi wsj_test_dev93 aurora4_dev_0330"
-extra_set="aurora4_train_si84_clean" # for PM use
-
-# here for extra decoding
-pm_train_dirs="aurora4_train_si84_clean aurora4_train_si84_multi \
-wsj_test_dev93 aurora4_dev_0330 \
-chime4_tr05_simu_isolated_1ch_track chime4_tr05_real_isolated_1ch_track \
-chime4_dt05_simu_isolated_1ch_track chime4_dt05_real_isolated_1ch_track"
-
+chime4_dt05_orig_clean"
+wsj_dirs="wsj_train_si284 wsj_test_dev93 wsj_test_eval92"
+aurora4_dirs="aurora4_train_si84_multi aurora4_train_si84_clean aurora4_dev_0330"
+aurora4_conds="street_wv1 street_wv2 airport_wv1 airport_wv2 train_wv1 train_wv2 restaurant_wv1 restaurant_wv2 babble_wv1 babble_wv2 car_wv1 car_wv2 clean_wv1 clean_wv2"
+for c in $aurora4_conds; do
+    aurora4_dirs+=" aurora4_test_eval92_${c}"
+    recog_set+=" aurora4_test_eval92_${c}"
+done
 
 # set up dump
 dumpdir=${dumpdir}/${train_set}
@@ -179,15 +175,15 @@ if [ ${stage} -le 1 ]; then
     echo "stage 1: Feature Generation"
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
     fbankdir=fbank
-    tasks="${train_dirs} ${recog_set} ${extra_set}"
+    tasks="${wsj_dirs} ${aurora4_dirs} ${chime4_dirs}"
     for x in ${tasks}; do
         steps/make_fbank_pitch.sh --nj 8 --cmd "${train_cmd}" --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
     done
 
     echo "combine data from wsj and aurora4"
-    utils/combine_data.sh data/${train_set} data/wsj_train_si284 data/aurora4_train_si84_multi
-    utils/combine_data.sh data/${train_dev} data/wsj_test_dev93 data/aurora4_dev_0330
+    utils/combine_data.sh data/${train_set} data/wsj_train_si284 data/aurora4_train_si84_clean
+    utils/combine_data.sh data/${train_dev} data/wsj_test_dev93 data/chime4_dt05_orig_clean
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
@@ -195,12 +191,12 @@ if [ ${stage} -le 1 ]; then
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{14,15,16}/${USER}/espnet-data/egs/wsj_aurora4_chime4/asr1/dump/${train_set}/${train_set}/delta${do_delta}/storage \
+        /export/b{14,15,16}/${USER}/espnet-data/egs/wsj_aurora4_chime4/asr1/dump/${train_set}/delta${do_delta}/storage \
         ${feat_tr_dir}/storage
     fi
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
     utils/create_split_dir.pl \
-        /export/b{14,15,16}/${USER}/espnet-data/egs/wsj_aurora4_chime4/asr1/dump/${train_set}/${train_dev}/delta${do_delta}/storage \
+        /export/b{14,15,16}/${USER}/espnet-data/egs/wsj_aurora4_chime4/asr1/dump/${train_dev}/delta${do_delta}/storage \
         ${feat_dt_dir}/storage
     fi
     dump.sh --cmd "$train_cmd" --nj 32 --do_delta $do_delta \
@@ -214,6 +210,7 @@ if [ ${stage} -le 1 ]; then
             ${feat_recog_dir}
     done
 fi
+
 
 dict=data/lang_1char/${train_set}_units.txt
 nlsyms=data/lang_1char/non_lang_syms.txt
@@ -245,6 +242,7 @@ if [ ${stage} -le 2 ]; then
             --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
     done
 fi
+
 
 # It takes about one day. If you just want to do end-to-end ASR without LM,
 # you can skip this and remove --rnnlm option in the recognition (stage 5)
@@ -371,7 +369,7 @@ if [ ${stage} -le 5 ]; then
 
     for rtask in ${recog_set}; do
     (
-        decode_dir=decode_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}/${rtask}
+        decode_dir=decode_${rtask}_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}
         if [ $use_wordlm = true ]; then
             recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
         else
@@ -387,7 +385,7 @@ if [ ${stage} -le 5 ]; then
 
         #### use CPU for decoding
         ngpu=0
-        # TODO: BATCHSIZE=0
+
         ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
             asr_recog.py \
             --ngpu ${ngpu} \
@@ -412,75 +410,3 @@ if [ ${stage} -le 5 ]; then
     echo "Finished"
 fi
 
-
-if [ ${stage} -le 6 ]; then
-    echo "stage 6: Decoding (train and dev for PM)"
-    nj=32
-
-    for rtask in ${pm_train_dirs}; do
-    (
-        decode_dir=decode_beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxlenratio}_ctcw${ctc_weight}_rnnlm${lm_weight}_${lmtag}/${rtask}
-        if [ $use_wordlm = true ]; then
-            recog_opts="--word-rnnlm ${lmexpdir}/rnnlm.model.best"
-        else
-            recog_opts="--rnnlm ${lmexpdir}/rnnlm.model.best"
-        fi
-        if [ $lm_weight == 0 ]; then
-            recog_opts=""
-        fi
-        feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
-
-        # split data
-        splitjson.py --parts ${nj} ${feat_recog_dir}/data.json
-
-        #### use CPU for decoding
-        ngpu=0
-        # TODO: BATCHSIZE=0
-        ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
-            asr_recog.py \
-            --ngpu ${ngpu} \
-            --backend ${backend} \
-            --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
-            --result-label ${expdir}/${decode_dir}/data.JOB.json \
-            --model ${expdir}/results/${recog_model}  \
-            --beam-size ${beam_size} \
-            --penalty ${penalty} \
-            --maxlenratio ${maxlenratio} \
-            --minlenratio ${minlenratio} \
-            --ctc-weight ${ctc_weight} \
-            --lm-weight ${lm_weight} \
-            $recog_opts &
-        wait
-
-        score_sclite.sh --wer true --nlsyms ${nlsyms} ${expdir}/${decode_dir} ${dict}
-
-    ) &
-    done
-    wait
-    echo "Finished"
-fi
-
-
-
-if [ ${stage} -le 7 ]; then
-    echo "stage 7: Dump features (train and dev for PM)"
-    # in the ASR script, the feature (train and dev) dumps as a whole set set1-set2,
-    # here we need to dump features according to each dirs (set1, set2)
-    nj=32
-
-    # pm_trn + pm_dev
-    for task in ${pm_train_dirs}; do
-        feat_dir=${dumpdir}/${task}/delta${do_delta}; mkdir -p ${feat_dir}
-        if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dir}/storage ]; then
-            utils/create_split_dir.pl \
-                /export/b{14,15,16}/${USER}/espnet-data/egs/wsj_aurora4_chime4/asr1/dump/${train_set}/${task}/delta${do_delta}/storage \
-                ${feat_dir}/storage
-        fi
-        dump.sh --cmd "$train_cmd" --nj 4 --do_delta $do_delta \
-            data/${task}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/pm_${train_set}/${task} \
-            ${feat_dir}
-
-        data2json.sh --feat ${feat_dir}/feats.scp \
-            --nlsyms ${nlsyms} data/${task} ${dict} > ${feat_dir}/data.json
-    done
-fi

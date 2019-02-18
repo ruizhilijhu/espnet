@@ -21,7 +21,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install --no-ins
         libatlas3-base \
         libcurl3-dev \
         libfreetype6-dev \
-        libperl-dev \ 
+        libhdf5-dev \
+        libperl-dev \
         libpng12-dev \
         libprotobuf-dev \
         libprotobuf9v5 \

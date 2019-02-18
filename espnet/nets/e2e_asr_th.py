@@ -2720,7 +2720,7 @@ class BLSTMP(torch.nn.Module):
             sub = self.subsample[layer + 1]
             if sub > 1:
                 ys_pad = ys_pad[:, ::sub]
-                ilens = [int(i + 1) // sub for i in ilens]
+                ilens = torch.LongTensor([int(i + 1) // sub for i in ilens])
             # (sum _utt frame_utt) x dim
             projected = getattr(self, 'bt' + str(layer)
                                 )(ys_pad.contiguous().view(-1, ys_pad.size(2)))
