@@ -136,6 +136,7 @@ if [ ${stage} -le 0 ]; then
     local/aurora4_data_prep.sh $aurora4 $wsj0
     local/aurora4_format_data.sh || exit 1;
     echo "AURORA4: split aurora4_test_eval92 into subcondition directories"
+    aurora4_conds="airport_wv1 airport_wv2 babble_wv1 babble_wv2 car_wv1 car_wv2 clean_wv1 clean_wv2 restaurant_wv1 restaurant_wv2 street_wv1 street_wv2 train_wv1 train_wv2"
     for c in $aurora4_conds; do
         grep "${c}" data/aurora4_test_eval92/wav.scp | awk '{print $1}' > data/aurora4_test_eval92/"${c}".list
         utils/subset_data_dir.sh --utt-list data/aurora4_test_eval92/${c}.list data/aurora4_test_eval92 data/aurora4_test_eval92_${c} || exit 1

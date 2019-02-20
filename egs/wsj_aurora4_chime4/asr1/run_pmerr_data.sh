@@ -123,7 +123,7 @@ if [ ${stage} -le 1 ]; then
     echo "Finished: BNF -- ${bnf_component} extraction"
 fi
 
-
+############### data preparation for pmerr and csdiseq #################
 if [ ${stage} -le 2 ]; then
     echo "stage 2: Label preparation"
     tasks="${pm_trn_set} ${pm_eval_set} ${pm_extra_set}"

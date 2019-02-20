@@ -136,7 +136,12 @@ def load_inputs_and_targets_pmerr(batch, label_type='wer'):
 
     # remove zero-length samples
     xs = [xs[i] for i in nonzero_sorted_idx]
-    ys = [np.clip(np.fromiter(map(float, ys[i]), dtype=np.float64), 0, 1) for i in nonzero_sorted_idx]
+
+    if label_type == '3class':
+        ys = [np.fromiter(map(float, ys[i]), dtype=np.float64) for i in nonzero_sorted_idx]
+    else:
+        ys = [np.clip(np.fromiter(map(float, ys[i]), dtype=np.float64), 0, 1) for i in nonzero_sorted_idx]
+
 
     return xs, ys
 

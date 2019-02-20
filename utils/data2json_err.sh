@@ -59,14 +59,16 @@ fi
 # feats
 cat ${feat} > ${tmpdir}/feat.scp
 
-cp ${dir}/utt2wer ${tmpdir}/wer
-cp ${dir}/utt2cer ${tmpdir}/cer
+
+[ -e ${dir}/utt2wer ] && cp ${dir}/utt2wer ${tmpdir}/wer
+[ -e ${dir}/utt2cer ] && cp ${dir}/utt2cer ${tmpdir}/cer
+[ -e ${dir}/utt23class ] && cp ${dir}/utt23class ${tmpdir}/3class
 
 # utt2wer utt2cer
 rm -f ${tmpdir}/*.json
-for x in ${dir}/text ${dir}/utt2spk ${tmpdir}/*.scp ${tmpdir}/cer ${tmpdir}/wer ; do
+for x in ${dir}/text ${dir}/utt2spk ${tmpdir}/*.scp ${tmpdir}/cer ${tmpdir}/wer ${tmpdir}/3class; do
     k=`basename ${x} .scp`
-    cat ${x} | scp2json.py --key ${k} > ${tmpdir}/${k}.json
+    [ -e $x ] && cat ${x} | scp2json.py --key ${k} > ${tmpdir}/${k}.json
 done
 mergejson.py --verbose ${verbose} ${tmpdir}/*.json
 

@@ -37,8 +37,8 @@ from espnet.asr.asr_utils import torch_snapshot
 from espnet.nets.e2e_asr_th import E2E
 from espnet.nets.e2e_asr_th import Loss
 from espnet.nets.e2e_asr_th import pad_list
-from espnet.nets.pm_asr_th import PMERR
-from espnet.nets.pm_asr_th import PmErrLoss
+from espnet.nets.pm_asr_th import PMERR, PMCLASS
+from espnet.nets.pm_asr_th import PmErrLoss, PmClassLoss
 
 # for kaldi io
 import kaldi_io_py
@@ -193,7 +193,10 @@ class CustomConverterPmErr(object):
         # perform padding and convert to tensor
         xs_pad = pad_list([torch.from_numpy(x).float() for x in xs], 0).to(device)
         ilens = torch.from_numpy(ilens).to(device)
-        ys_pad = pad_list([torch.from_numpy(y).long() for y in ys], self.ignore_id).to(device)
+        if self.label_type == '3class':
+            ys_pad = pad_list([torch.from_numpy(y).long() for y in ys], self.ignore_id).to(device)
+        else:
+            ys_pad = pad_list([torch.from_numpy(y).float() for y in ys], self.ignore_id).to(device)
 
         return xs_pad, ilens, ys_pad
 
@@ -771,6 +774,244 @@ def recog_pmerr(args):
                 feats = [kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
                          for name in names]
                 ys = pmerr.recognize_batch(feats)
+                for i, y in enumerate(ys):
+                    name = names[i]
+                    new_js[name] = add_results_to_json_pmerr(js[name], y, train_args.label_type)
+
+    with open(args.result_label, 'wb') as f:
+        f.write(json.dumps({'utts': new_js}, indent=4, sort_keys=True).encode('utf_8'))
+
+
+def train_pmclass(args):
+    '''Run training on classification task'''
+    # seed setting
+    torch.manual_seed(args.seed)
+
+    # debug mode setting
+    # 0 would be fastest, but 1 seems to be reasonable
+    # by considering reproducability
+    # revmoe type check
+    if args.debugmode < 2:
+        chainer.config.type_check = False
+        logging.info('torch type check is disabled')
+    # use determinisitic computation or not
+    if args.debugmode < 1:
+        torch.backends.cudnn.deterministic = False
+        logging.info('torch cudnn deterministic is disabled')
+    else:
+        torch.backends.cudnn.deterministic = True
+
+    # check cuda availability
+    if not torch.cuda.is_available():
+        logging.warning('cuda is not available')
+
+    # get input and output dimension info
+    with open(args.valid_json, 'rb') as f:
+        valid_json = json.load(f)['utts']
+    utts = list(valid_json.keys())
+    idim = int(valid_json[utts[0]]['input'][0]['shape'][1])
+    odim = len(args.label_list)
+    logging.info('#input dims : ' + str(idim))
+    logging.info('#output dims: ' + str(odim))
+
+    # specify model architecture
+    pmclass = PMCLASS(idim, odim, args)
+    model = PmClassLoss(pmclass)
+
+    # write model config
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
+    model_conf = args.outdir + '/model.json'
+    with open(model_conf, 'wb') as f:
+        logging.info('writing a model config file to ' + model_conf)
+        f.write(json.dumps((idim, odim, vars(args)), indent=4, sort_keys=True).encode('utf_8'))
+    for key in sorted(vars(args).keys()):
+        logging.info('ARGS: ' + key + ': ' + str(vars(args)[key]))
+
+    reporter = model.reporter
+
+    # check the use of multi-gpu
+    if args.ngpu > 1:
+        model = torch.nn.DataParallel(model, device_ids=list(range(args.ngpu)))
+        logging.info('batch size is automatically increased (%d -> %d)' % (
+            args.batch_size, args.batch_size * args.ngpu))
+        args.batch_size *= args.ngpu
+
+    # set torch device
+    device = torch.device("cuda" if args.ngpu > 0 else "cpu")
+    model = model.to(device)
+
+    # Setup an optimizer
+    if args.opt == 'adadelta':
+        optimizer = torch.optim.Adadelta(
+            model.parameters(), rho=0.95, eps=args.eps)
+    elif args.opt == 'adam':
+        optimizer = torch.optim.Adam(model.parameters())
+
+    # FIXME: TOO DIRTY HACK
+    setattr(optimizer, "target", reporter)
+    setattr(optimizer, "serialize", lambda s: reporter.serialize(s))
+
+    # Setup a converter
+    converter = CustomConverterPmErr(pmclass.subsample[0], args.label_type)
+
+    # read json data
+    with open(args.train_json, 'rb') as f:
+        train_json = json.load(f)['utts']
+    with open(args.valid_json, 'rb') as f:
+        valid_json = json.load(f)['utts']
+
+    # make minibatch list (variable length)
+    train = make_batchset(train_json, args.batch_size,
+                          args.maxlen_in, -1, args.minibatches,
+                          min_batch_size=args.ngpu if args.ngpu > 1 else 1)
+    valid = make_batchset(valid_json, args.batch_size,
+                          args.maxlen_in, -1, args.minibatches,
+                          min_batch_size=args.ngpu if args.ngpu > 1 else 1)
+    # hack to make batchsze argument as 1
+    # actual bathsize is included in a list
+    if args.n_iter_processes > 0:
+        train_iter = chainer.iterators.MultiprocessIterator(
+            TransformDataset(train, converter.transform),
+            batch_size=1, n_processes=args.n_iter_processes, n_prefetch=8, maxtasksperchild=20)
+        valid_iter = chainer.iterators.MultiprocessIterator(
+            TransformDataset(valid, converter.transform),
+            batch_size=1, repeat=False, shuffle=False,
+            n_processes=args.n_iter_processes, n_prefetch=8, maxtasksperchild=20)
+    else:
+        train_iter = chainer.iterators.SerialIterator(
+            TransformDataset(train, converter.transform),
+            batch_size=1)
+        valid_iter = chainer.iterators.SerialIterator(
+            TransformDataset(valid, converter.transform),
+            batch_size=1, repeat=False, shuffle=False)
+
+    # Set up a trainer
+    updater = CustomUpdater(
+        model, args.grad_clip, train_iter, optimizer, converter, device, args.ngpu)
+    trainer = training.Trainer(
+        updater, (args.epochs, 'epoch'), out=args.outdir)
+
+    # Resume from a snapshot
+    if args.resume:
+        logging.info('resumed from %s' % args.resume)
+        torch_resume(args.resume, trainer)
+
+    # Evaluate the model with the test dataset for each epoch
+    trainer.extend(CustomEvaluator(model, valid_iter, reporter, converter, device))
+
+    # Make a plot for training and validation values
+    trainer.extend(extensions.PlotReport(['main/loss', 'validation/main/loss'],
+                                         'epoch', file_name='loss.png'))
+    trainer.extend(extensions.PlotReport(['main/acc', 'validation/main/acc'],
+                                         'epoch', file_name='acc.png'))
+
+    # Save best models
+    trainer.extend(extensions.snapshot_object(model, 'model.loss.best', savefun=torch_save),
+                   trigger=training.triggers.MinValueTrigger('validation/main/loss'))
+    trainer.extend(extensions.snapshot_object(model, 'model.acc.best', savefun=torch_save),
+                   trigger=training.triggers.MaxValueTrigger('validation/main/acc'))
+
+    # save snapshot which contains model and optimizer states
+    trainer.extend(torch_snapshot(), trigger=(1, 'epoch'))
+
+    # epsilon decay in the optimizer
+    if args.opt == 'adadelta':
+        if args.criterion == 'acc':
+            trainer.extend(restore_snapshot(model, args.outdir + '/model.acc.best', load_fn=torch_load),
+                           trigger=CompareValueTrigger(
+                               'validation/main/acc',
+                               lambda best_value, current_value: best_value > current_value))
+            trainer.extend(adadelta_eps_decay(args.eps_decay),
+                           trigger=CompareValueTrigger(
+                               'validation/main/acc',
+                               lambda best_value, current_value: best_value > current_value))
+        elif args.criterion == 'loss':
+            trainer.extend(restore_snapshot(model, args.outdir + '/model.loss.best', load_fn=torch_load),
+                           trigger=CompareValueTrigger(
+                               'validation/main/loss',
+                               lambda best_value, current_value: best_value < current_value))
+            trainer.extend(adadelta_eps_decay(args.eps_decay),
+                           trigger=CompareValueTrigger(
+                               'validation/main/loss',
+                               lambda best_value, current_value: best_value < current_value))
+
+    # Write a log of evaluation statistics for each epoch
+    trainer.extend(extensions.LogReport(trigger=(REPORT_INTERVAL, 'iteration')))
+    report_keys = ['epoch', 'iteration', 'main/loss',
+                   'validation/main/loss',
+                   'main/acc', 'validation/main/acc', 'elapsed_time']
+    if args.opt == 'adadelta':
+        trainer.extend(extensions.observe_value(
+            'eps', lambda trainer: trainer.updater.get_optimizer('main').param_groups[0]["eps"]),
+            trigger=(REPORT_INTERVAL, 'iteration'))
+        report_keys.append('eps')
+    if args.report_err:
+        report_keys.append('validation/main/err')
+    trainer.extend(extensions.PrintReport(
+        report_keys), trigger=(REPORT_INTERVAL, 'iteration'))
+
+    trainer.extend(extensions.ProgressBar(update_interval=REPORT_INTERVAL))
+
+    # Run the training
+    trainer.run()
+
+
+def recog_pmclass(args):
+    '''Run recognition'''
+    # seed setting
+    torch.manual_seed(args.seed)
+
+    # read training config
+    idim, odim, train_args = get_model_conf(args.model, args.model_conf)
+
+    # load trained model parameters
+    logging.info('reading model parameters from ' + args.model)
+    pmclass = PMCLASS(idim, odim, train_args)
+    model = PmClassLoss(pmclass)
+    torch_load(args.model, model)
+    pmclass.recog_args = args
+
+    # gpu
+    if args.ngpu == 1:
+        gpu_id = range(args.ngpu)
+        logging.info('gpu id: ' + str(gpu_id))
+        model.cuda()
+
+    # read json data
+    with open(args.recog_json, 'rb') as f:
+        js = json.load(f)['utts']
+    new_js = {}
+
+    if args.batchsize == 0:
+        with torch.no_grad():
+            for idx, name in enumerate(js.keys(), 1):
+                logging.info('(%d/%d) decoding ' + name, idx, len(js.keys()))
+                feat = kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
+                y = pmclass.recognize(feat)
+                new_js[name] = add_results_to_json_pmerr(js[name], y, train_args.label_type)
+    else:
+        try:
+            from itertools import zip_longest as zip_longest
+        except Exception:
+            from itertools import izip_longest as zip_longest
+
+        def grouper(n, iterable, fillvalue=None):
+            kargs = [iter(iterable)] * n
+            return zip_longest(*kargs, fillvalue=fillvalue)
+
+        # sort data
+        keys = list(js.keys())
+        feat_lens = [js[key]['input'][0]['shape'][0] for key in keys]
+        sorted_index = sorted(range(len(feat_lens)), key=lambda i: -feat_lens[i])
+        keys = [keys[i] for i in sorted_index]
+
+        with torch.no_grad():
+            for names in grouper(args.batchsize, keys, None):
+                names = [name for name in names if name]
+                feats = [kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
+                         for name in names]
+                ys = pmclass.recognize_batch(feats)
                 for i, y in enumerate(ys):
                     name = names[i]
                     new_js[name] = add_results_to_json_pmerr(js[name], y, train_args.label_type)

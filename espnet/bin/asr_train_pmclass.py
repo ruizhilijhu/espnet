@@ -27,6 +27,8 @@ def main():
                         help='Output directory')
     parser.add_argument('--debugmode', default=1, type=int,
                         help='Debugmode')
+    parser.add_argument('--dict', required=True,
+                        help='Dictionary')
     parser.add_argument('--seed', default=1, type=int,
                         help='Random seed')
     parser.add_argument('--debugdir', type=str,
@@ -42,8 +44,8 @@ def main():
                         help='Filename of train label data (json)')
     parser.add_argument('--valid-json', type=str, default=None,
                         help='Filename of validation label data (json)')
-    parser.add_argument('--label-type', default='wer', type=str,
-                        choices=['wer', 'cer'],
+    parser.add_argument('--label-type', default='3class', type=str,
+                        choices=['3class'],
                         help='label type for training.')
     # network archtecture
     parser.add_argument('--model-type', default='BlstmpAvgFwd', type=str,
@@ -63,9 +65,12 @@ def main():
                         help='Subsample input frames x_y_z means subsample every x frame at 1st layer, '
                              'every y frame at 2nd layer etc.')
     # loss
-    parser.add_argument('--loss-type', default='bceloss', type=str,
-                        choices=['bceloss','mseloss'],
+    parser.add_argument('--loss-type', default='xentloss', type=str,
+                        choices=['xentloss'],
                         help='Type of loss.')
+    # recognition options to compute ERR
+    parser.add_argument('--report-err', default=False, action='store_true',
+                        help='Compute ERR on development set')
     # minibatch related
     parser.add_argument('--batch-size', '-b', default=50, type=int,
                         help='Batch size')
@@ -81,8 +86,8 @@ def main():
                         help='Epsilon constant for optimizer')
     parser.add_argument('--eps-decay', default=0.01, type=float,
                         help='Decaying ratio of epsilon')
-    parser.add_argument('--criterion', default='loss', type=str,
-                        choices=['loss'],
+    parser.add_argument('--criterion', default='acc', type=str,
+                        choices=['loss', 'acc'],
                         help='Criterion to perform epsilon decay')
     parser.add_argument('--threshold', default=1e-4, type=float,
                         help='Threshold to stop iteration')
@@ -130,11 +135,22 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
+    # load dictionary for debug log
+    if args.dict is not None:
+        with open(args.dict, 'rb') as f:
+            dictionary = f.readlines()
+        label_list = [entry.decode('utf-8').split(' ')[0]
+                     for entry in dictionary]
+        # todo check decode utf-8 [1,2,3]
+        args.label_list = label_list
+    else:
+        args.label_list = None
+
     # train
     logging.info('backend = ' + args.backend)
     if args.backend == "pytorch":
-        from espnet.asr.asr_pytorch import train_pmerr
-        train_pmerr(args)
+        from espnet.asr.asr_pytorch import train_pmclass
+        train_pmclass(args)
     else:
         raise ValueError("pytorch is only supported.")
 
