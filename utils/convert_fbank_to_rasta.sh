@@ -13,6 +13,8 @@ cmd=run.pl
 compress=true
 pitchdims=3
 sigma=6
+sigma2=8
+gauss_mode=gauss1order
 # End configuration section.
 
 echo "$0 $@"  # Print the command line for logging
@@ -26,7 +28,9 @@ if [ $# -lt 2 ] || [ $# -gt 4 ]; then
    echo "Note: <log-dir> defaults to <rasta-data-dir>/log, and <rasta-dir> defaults to <rasta-data-dir>/data"
    echo "Options: "
    echo "  --pitchdims                <pitch-dims>              # pitch dimensions to avoid filtering "
-   echo "  --sigma                    <sigma>                   # standard deviation of gaussian"
+   echo "  --sigma                    <sigma>                   # standard deviation of 1st gaussian"
+   echo "  --sigma2                   <sigma>                   # standard deviation of 2nd gaussian"
+   echo "  --gauss-mode               <gauss-mode>              # mode of gaussian [gauss1order, gauss2order, 2gauss]"
    echo "  --nj                       <nj>                      # number of parallel jobs"
    echo "  --cmd (utils/run.pl|utils/queue.pl <queue opts>)     # how to run jobs."
    exit 1;
@@ -89,9 +93,9 @@ utils/split_scp.pl $scp $split_scps || exit 1;
 
 
 $cmd JOB=1:$nj $logdir/convert_fbank_to_rasta_${name}.JOB.log \
-python ../../../utils/convert_fbank_to_rasta.py --fbankscp $logdir/fbank_feats.JOB.scp \
+python ../../../utils/convert_fbank_to_rasta.py --gauss-mode ${gauss_mode} --fbankscp $logdir/fbank_feats.JOB.scp \
 --rastascp $rasta_dir/rasta_$name.JOB.scp --rastaark $rasta_dir/rasta_$name.JOB.ark \
---sigma $sigma --exclude-last-dims $pitchdims || exit 1
+--sigma $sigma --sigma2 $sigma2 --exclude-last-dims $pitchdims || exit 1
 
 
 # concatenate the .scp files together.

@@ -1,0 +1,46 @@
+{
+
+  "encoders":[
+    {
+      "etype":"vggblstmp",
+      "elayers":4,
+      "eunits":320,
+      "eprojs":320,
+      "subsample":"1_2_2_1_1",
+      "dropout_rate": 0.0,
+      "atype":"add",
+      "adim": 320,
+      "awin": 5,
+      "aheads": 4,
+      "aconv_chans": 10,
+      "aconv_filts": 100
+    },
+    {
+      "etype":"blstmp",
+      "elayers":4,
+      "eunits":320,
+      "eprojs":320,
+      "subsample":"1_1_1_1_1",
+      "dropout_rate": 0.0,
+      "atype":"add",
+      "adim": 320,
+      "awin": 5,
+      "aheads": 4,
+      "aconv_chans": 10,
+      "aconv_filts": 100
+    }
+  ],
+  "decoder": {
+    "dtype":"lstm",
+    "dlayers":1,
+    "dunits":300
+  },
+  "encatt": {
+    "atype":"add",
+    "adim": 320,
+    "awin": 5,
+    "aheads": 4,
+    "aconv_chans": 10,
+    "aconv_filts": 100
+  }
+}

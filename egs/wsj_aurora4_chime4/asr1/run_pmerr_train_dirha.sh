@@ -32,9 +32,9 @@ subsample=1_2_2_1 # skip every n frame from input to nth layers
 flayers=1
 funits=300
 # loss
-loss_type=xentloss
+loss_type=bceloss
 # label type [wer, cer]
-label_type=3class
+label_type=wer
 # minibatch related
 batchsize=30
 maxlen_in=800  # if input length  > maxlen_in, batchsize is automatically reduced
@@ -42,8 +42,8 @@ maxlen_in=800  # if input length  > maxlen_in, batchsize is automatically reduce
 opt=adadelta
 epochs=30
 # decoding
-recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
-# decoder
+recog_model=model.loss.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
+
 
 # exp tag
 tag="" # tag for managing experiments.
@@ -68,12 +68,12 @@ set -o pipefail
 
 [ -z $idx ] && echo "Have to specify experiment index" && exit 1
 [ -z $bnftype ] && echo "Have to specify bottleneck feature type" && exit 1
-outdir=exp_pm3class/expt_${bnftype}_err_${label_type}_${idx}
+outdir=exp_pmerr/expt_${bnftype}_err_${label_type}_${idx}
 ln -s $PWD/$outdir $dumpdir/
 
 # data (PM)
-train_set=aurora4_train_si84_clean_trn-aurora4_train_si84_multi_trn-chime4_tr05_simu_isolated_1ch_track-chime4_tr05_real_isolated_1ch_track-wsj_test_dev93-aurora4_dev_0330
-train_dev=aurora4_train_si84_clean_cv-aurora4_train_si84_multi_cv-chime4_et05_simu_isolated_1ch_track-chime4_et05_real_isolated_1ch_track-wsj_test_eval92-aurora4_test_eval92
+train_set=aurora4_train_si84_clean-aurora4_train_si84_multi-chime4_tr05_simu_isolated_1ch_track-chime4_tr05_real_isolated_1ch_track
+train_dev=wsj_test_dev93-aurora4_dev_0330-chime4_dt05_simu_isolated_1ch_track-chime4_dt05_real_isolated_1ch_track
 recog_set="wsj_test_eval92 \
 chime4_et05_real_isolated_1ch_track chime4_et05_simu_isolated_1ch_track \
 aurora4_test_eval92_street_wv1 aurora4_test_eval92_street_wv2 \
@@ -82,9 +82,9 @@ aurora4_test_eval92_train_wv1 aurora4_test_eval92_train_wv2 \
 aurora4_test_eval92_restaurant_wv1 aurora4_test_eval92_restaurant_wv2 \
 aurora4_test_eval92_babble_wv1 aurora4_test_eval92_babble_wv2 \
 aurora4_test_eval92_car_wv1 aurora4_test_eval92_car_wv2 \
-aurora4_test_eval92_clean_wv1 aurora4_test_eval92_clean_wv2 \
-aurora4_train_si84_clean_cv aurora4_train_si84_multi_cv"
-#recog_set=wsj_test_eval92
+aurora4_test_eval92_clean_wv1 aurora4_test_eval92_clean_wv2"
+recog_set="dirha_real_KA6 dirha_real_LA6 dirha_sim_KA6 dirha_sim_LA6"
+
 
 feat_tr_dir=${dumpdir}/${train_set}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${train_set}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
@@ -99,41 +99,6 @@ else
     expdir=${outdir}/expt_${backend}_${tag}
 fi
 mkdir -p ${expdir}
-echo $train_set > $expdir/info_train_set
-dict=$expdir/dict.txt
-echo -e "0 0\n1 1\n2 2" > $dict
-
-if [ ${stage} -le 1 ]; then
-    echo "stage 1: PM 3CLASS Network Training"
-
-    ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
-        asr_train_pmclass.py \
-        --ngpu ${ngpu} \
-        --backend ${backend} \
-        --outdir ${expdir}/results \
-        --debugmode ${debugmode} \
-        --debugdir ${expdir} \
-        --minibatches ${N} \
-        --verbose ${verbose} \
-        --resume ${resume} \
-        --seed ${seed} \
-        --train-json ${feat_tr_dir}/data_err.json \
-        --valid-json ${feat_dt_dir}/data_err.json \
-        --label-type ${label_type} \
-        --model-type ${model_type} \
-        --blayers ${blayers} \
-        --bunits ${bunits} \
-        --bprojs ${bprojs} \
-        --flayers ${flayers} \
-        --funits ${funits} \
-        --subsample ${subsample} \
-        --loss-type ${loss_type} \
-        --batch-size ${batchsize} \
-        --maxlen-in ${maxlen_in} \
-        --opt ${opt} \
-        --dict ${dict} \
-        --epochs ${epochs}
-fi
 
 
 if [ ${stage} -le 2 ]; then
@@ -153,7 +118,7 @@ if [ ${stage} -le 2 ]; then
         ngpu=0
 
         ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
-            asr_recog_pmclass.py \
+            asr_recog_pmerr.py \
             --ngpu ${ngpu} \
             --backend ${backend} \
             --recog-json ${feat_recog_dir}/split${nj}utt/data_err.JOB.json \

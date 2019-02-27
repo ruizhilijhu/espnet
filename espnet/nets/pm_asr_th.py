@@ -198,7 +198,7 @@ class PMERR(torch.nn.Module):
         # decode the first utterance
         if self.loss_type == 'bceloss':
             y = torch.sigmoid(h)
-        if self.loss_type == 'mseloss':
+        elif self.loss_type == 'mseloss':
             y = F.hardtanh(h, min_val=0., max_val=1.)
         else:
             logging.error(
@@ -229,7 +229,7 @@ class PMERR(torch.nn.Module):
         # 2. decoder
         if self.loss_type == 'bceloss':
             ys = torch.sigmoid(hpad)
-        if self.loss_type == 'mseloss':
+        elif self.loss_type == 'mseloss':
             ys = F.hardtanh(hpad, min_val=0., max_val=1.)
         else:
             logging.error(

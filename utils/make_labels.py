@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--prefix', type=str, default='',
                         help='prefix to output files')
     parser.add_argument('--capital-uttid', default= False, action='store_true', help='Capitalize the utterance name')
+    parser.add_argument('--capital-first-uttid', default= False, action='store_true', help='Capitalize the first letter of utterance name')
+
     parser.add_argument('--exclude-utts-list', type=str, default='/Users/ben_work/PycharmProjects/espnet_one_stream/egs/wsj_aurora4_chime4/asr1/local/pm_exclude_utts.list',
                         help='list of excluded utterance list. In result.txt, [Scores:] are different from [Eval:].')
 
@@ -60,6 +62,8 @@ def main():
                 line_id = line.strip().split('-',1)[1][:-1]
                 if args.capital_uttid:
                     line_id = line_id.upper()
+                if args.capital_first_uttid:
+                    line_id = line_id[0].upper()+line_id[1:]
                 # append
                 uttnames.append(line_id)
                 line_count_id += 1

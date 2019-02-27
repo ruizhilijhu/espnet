@@ -248,6 +248,65 @@ class PlotAttentionReport(extension.Extension):
         plt.close()
 
 
+class PlotAttentionReportMulEnc(extension.Extension):
+    """Plot attention reporter (multi-encoder case)
+
+    :param function att_vis_fn: function of attention visualization
+    :param list data: list json utt key items
+    :param str outdir: directory to save figures
+    :param function converter: function to convert data
+    :param int device: device id
+    :param bool reverse: If True, input and output length are reversed
+    """
+
+    def __init__(self, att_vis_fn, data, outdir, converter, device, reverse=False):
+        self.att_vis_fn = att_vis_fn
+        self.data = copy.deepcopy(data)
+        self.outdir = outdir
+        self.converter = converter
+        self.device = device
+        self.reverse = reverse
+        if not os.path.exists(self.outdir):
+            os.makedirs(self.outdir)
+
+    def __call__(self, trainer):
+        batch = self.converter([self.converter.transform(self.data)], self.device)
+        encatt_ws, att_ws_list, hlens_list, ylens = self.att_vis_fn(*batch)
+        num_enc = len(hlens_list)
+        # encatt_ws: B x Lmax x NumEnc
+        # att_ws_list: [B x Lmax x TmaxN] N is for Nth attention
+        # hlens_list: [[B]xN]
+
+        # plot encoder attention encatt: B x Lmax x Tmax (numpy)
+        for idx, encatt_w in enumerate(encatt_ws):
+            filename = "%s/%s.ep.{.updater.epoch}.encatt.png" % (
+                self.outdir, self.data[idx][0])
+
+            dec_len = ylens[idx]
+            enc_len = num_enc
+            encatt_w = encatt_w[:dec_len, :enc_len]
+            self._plot_and_save_attention(encatt_w, filename.format(trainer))
+
+        # plot each attention: B x Lmax x Tmax (numpy)
+        for att_idx, att_ws in enumerate(att_ws_list):
+            for idx, att_w in enumerate(att_ws):
+                filename = "%s/%s.ep.{.updater.epoch}.att%d.png" % (
+                    self.outdir, self.data[idx][0], att_idx)
+                dec_len = ylens[idx]
+                enc_len = hlens_list[att_idx][idx]
+                att_w = att_w[:dec_len, :enc_len]
+                self._plot_and_save_attention(att_w, filename.format(trainer))
+
+    def _plot_and_save_attention(self, att_w, filename):
+        # dynamically import matplotlib due to not found error
+        import matplotlib.pyplot as plt
+        plt.imshow(att_w, aspect="auto")
+        plt.xlabel("Encoder Index")
+        plt.ylabel("Decoder Index")
+        plt.tight_layout()
+        plt.savefig(filename)
+        plt.close()
+
 def restore_snapshot(model, snapshot, load_fn=chainer.serializers.load_npz):
     '''Extension to restore snapshot'''
     @training.make_extension(trigger=(1, 'epoch'))

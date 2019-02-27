@@ -26,9 +26,14 @@ def main():
     parser.add_argument('--rastaark', type=str,
                         help='RASTA feat ark [out]')
     parser.add_argument('--sigma', type=float, default=7,
-                        help='standard deviation of gaussian')
+                        help='standard deviation of first gaussian')
+    parser.add_argument('--sigma2', type=float, default=7,
+                        help='standard deviation of second gaussian')
     parser.add_argument('--exclude-last-dims', type=float, default=3,
                         help='last dimemsions not to process rasta. [for pitch]')
+    parser.add_argument('--gauss-mode', default='gauss1order', type=str,
+                        choices=['gauss1order', 'gauss2order', '2gauss'],
+                        help='Order of gaussian derivative.')
 
 
 
@@ -49,10 +54,22 @@ def main():
     reader = kaldi_io_py.read_mat_scp('{}'.format(args.fbankscp))
 
     # filter
-    pts = np.array(range(-50, 51))
-    gauss_1st_deri = lambda x: -x * np.exp(-0.5 * np.power(x, 2) / np.power(args.sigma, 2)) / np.sqrt(
-        2 * np.pi) / np.power(args.sigma, 3)
-    filter = gauss_1st_deri(pts)
+    def pick_filter(name, sigma, sigma2):
+        pts = np.array(range(-50, 51))
+        if name == '1_deri':
+            filter = lambda x: -x * np.exp(-0.5 * np.power(x, 2) / np.power(sigma, 2)) / np.sqrt(2 * np.pi) / np.power(
+                sigma, 3)
+        elif name == '2_deri':
+            filter = lambda x: -(np.power(sigma, 2) - np.power(x, 2)) * np.exp(
+                -0.5 * np.power(x, 2) / np.power(sigma, 2)) / np.sqrt(2 * np.pi) / np.power(sigma, 5)
+        elif name == '2gauss':
+            filter = lambda x: np.exp(-0.5 * np.power(x, 2) / np.power(sigma, 2)) / np.sqrt(2 * np.pi) / np.power(sigma,
+                                                                                                                  2) - np.exp(
+                -0.5 * np.power(x, 2) / np.power(sigma2, 2)) / np.sqrt(2 * np.pi) / np.power(sigma2, 2)
+        filter = filter(pts)
+        return filter
+
+    filter = pick_filter(args.gauss_mode, args.sigma, args.sigma2)
 
     # extract feature and then write as ark with scp format
     cnt = 0
