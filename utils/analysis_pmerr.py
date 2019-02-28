@@ -23,6 +23,8 @@ file_map = {
 'expt_fbank_err_cer_11.trn.txt':'fbank_cer_mseloss (train)',
 'expt_fbank_err_wer_11.trn.txt':'fbank_wer_mseloss (train)',
 
+'expt_ctcpresm_err_cer_10.txt':'ctcpresoftmax_cer_bceloss (test)',
+'expt_ctcpresm_err_wer_10.txt':'ctcpresoftmax_wer_bceloss (test)',
 
 'expt_bnfenc_err_3class_10.txt':'bnfenc_3class',
 'expt_bnfenc_err_3class_10.trn.txt':'bnfenc_3class (train)',
@@ -105,32 +107,32 @@ feat='bnfenc'
 #### test data ######
 plt.figure()
 id = 'expt_{}_err_{}_10.txt'.format(feat, err)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4real', datamode='test')
-# plt.plot(errs, rec_errs, 'r.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4simu', datamode='test')
-# plt.plot(errs, rec_errs, 'g.', markersize=markersize)
-#
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='aurora4', datamode='test')
-# plt.plot(errs, rec_errs, 'c.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='wsj', datamode='test')
-# plt.plot(errs, rec_errs, 'b.', markersize=markersize)
+names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4real', datamode='test')
+plt.plot(errs, rec_errs, 'r.', markersize=markersize)
+names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4simu', datamode='test')
+plt.plot(errs, rec_errs, 'g.', markersize=markersize)
+
+names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='aurora4', datamode='test')
+plt.plot(errs, rec_errs, 'c.', markersize=markersize)
+names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='wsj', datamode='test')
+plt.plot(errs, rec_errs, 'b.', markersize=markersize)
 
 # names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.{}.txt'.format(dir, feat, err, 'LA6'), dataset='dirhaReal', datamode='test')
 # plt.plot(errs, rec_errs, 'm.', markersize=markersize)
 # names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.{}.txt'.format(dir, feat, err, 'KA6'), dataset='dirhaReal', datamode='test')
 # plt.plot(errs, rec_errs, 'k.', markersize=markersize)
 
-names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaReal', datamode='test')
-plt.plot(errs, rec_errs, 'm.', markersize=markersize)
-names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaSim', datamode='test')
-plt.plot(errs, rec_errs, 'g.', markersize=markersize)
+# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaReal', datamode='test')
+# plt.plot(errs, rec_errs, 'm.', markersize=markersize)
+# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaSim', datamode='test')
+# plt.plot(errs, rec_errs, 'g.', markersize=markersize)
 
 plt.ylim([0.,1.])
 plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
 plt.xlabel('Groundtruth')
 plt.ylabel('Prediction')
-# plt.legend(['chime4real', 'chime4simu', 'aurora4','wsj', 'dirhaRealLA6', 'dirhaRealKA6'])
-plt.legend(['dirhaReal', 'dirhaSim'])
+plt.legend(['chime4real', 'chime4simu', 'aurora4','wsj', 'dirhaRealLA6', 'dirhaRealKA6'])
+# plt.legend(['dirhaReal', 'dirhaSim'])
 
 plt.title('{}'.format(file_map[id]))
 

@@ -25,8 +25,8 @@ dumpdir=dump
 
 ########### PM configs #############
 # bnf components
-bnf_component=enc
-bnf_batchsize=5
+bnf_component=ctxenc
+bnf_batchsize=1 # decoder related 1, encoder only 5
 
 ############ decoding option for BNF and decoding #############
 beam_size=30
@@ -37,7 +37,7 @@ maxlenratio=0.0
 ctc_weight=0.3
 lm_weight=0
 lmtag=1layer_unit1000_sgd_bs300_word65000
-
+use_wordlm=true     # false means to train/use a character LM
 
 . utils/parse_options.sh || exit 1;
 
@@ -84,6 +84,9 @@ decode_id=beam${beam_size}_e${recog_model}_p${penalty}_len${minlenratio}-${maxle
 dumpdir=${dumpdir}
 pmdumpdir=${asrdir}/dump_bnf${bnf_component}_${decode_id}
 
+########### set up rnnlm ##############
+lmexpdir=exp/train_rnnlm_${backend}_${lmtag}
+
 if [ ${stage} -le 1 ]; then
     echo "stage 1: BNF(ENCODER) Feature Extraction -- ${bnf_component}"
     nj=32
@@ -97,6 +100,20 @@ if [ ${stage} -le 1 ]; then
         # split data
         splitjson.py --parts ${nj} ${featdir}/data.json
 
+        # specify recog_opts when extracting decoder-related features
+        recog_opts=""
+        if [[ $bnf_component == "decstate" ]]||[[ $bnf_component == "decpresm" ]] || [[ $bnf_component == "ctxenc" ]]; then
+            recog_opts="--beam-size ${beam_size} --penalty ${penalty} --maxlenratio ${maxlenratio} \
+            --minlenratio ${minlenratio} --ctc-weight ${ctc_weight} --lm-weight ${lm_weight} "
+            if [[ $lm_weight -gt 0 ]]; then
+                if [[ $use_wordlm = true ]]; then
+                    recog_opts+=" --word-rnnlm ${lmexpdir}/rnnlm.model.best"
+                else
+                    recog_opts+=" --rnnlm ${lmexpdir}/rnnlm.model.best"
+                fi
+            fi
+        fi
+
         #### use CPU for bnf extraction
         ngpu=0
 
@@ -105,11 +122,15 @@ if [ ${stage} -le 1 ]; then
             --ngpu ${ngpu} \
             --backend ${backend} \
             --batchsize ${bnf_batchsize} \
-            --feat-json ${featdir}/split${nj}utt/data.JOB.json \
+            --recog-json ${featdir}/split${nj}utt/data.JOB.json \
+            --result-label ${bnfdir}/data.JOB.json \
             --out ${bnfdir}/feats.JOB \
             --model ${asrdir}/results/${recog_model} \
-            --bnf-component ${bnf_component} &
+            --bnf-component ${bnf_component} \
+            ${recog_opts} &
         wait
+
+        score_sclite.sh --wer true --nlsyms ${nlsyms} ${bnfdir} ${dict}
 
         [ -e ${bnfdir}/feats.scp ] && rm ${bnfdir}/feats.scp
         cat ${bnfdir}/feats.*.scp > ${bnfdir}/feats.scp || exit 1
@@ -248,6 +269,7 @@ if [ ${stage} -le 5 ]; then
     done
 fi
 
+exit 0 # the following is for fbank only
 # test from here
 if [ ${stage} -le 6 ]; then
     echo "stage 6: Create data directory -- fbank"

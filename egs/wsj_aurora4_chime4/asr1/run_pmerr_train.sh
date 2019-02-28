@@ -50,7 +50,7 @@ tag="" # tag for managing experiments.
 
 ################ input and output related ##################
 bnftype=
-dumpdir=exp/wsj_train_si284-aurora4_train_si84_multi_pytorch_blstmp_e4_subsample1_1_1_1_1_unit320_proj320_d1_unit300_add_aconvc10_aconvf100_mtlalpha0.2_adadelta_sampprob0.0_bs15_mli800_mlo150_lsmunigram0.05/dump_bnfenc_beam30_emodel.acc.best_p0.0_len0.0-0.0_ctcw0.3_rnnlm0_1layer_unit1000_sgd_bs300_word65000   # directory to dump full features
+dumpdir=exp/wsj_train_si284-aurora4_train_si84_multi_pytorch_blstmp_e4_subsample1_1_1_1_1_unit320_proj320_d1_unit300_add_aconvc10_aconvf100_mtlalpha0.2_adadelta_sampprob0.0_bs15_mli800_mlo150_lsmunigram0.05/dump_bnfctcpresm_beam30_emodel.acc.best_p0.0_len0.0-0.0_ctcw0.3_rnnlm0_1layer_unit1000_sgd_bs300_word65000   # directory to dump full features
 # set up dump and out
 idx=
 

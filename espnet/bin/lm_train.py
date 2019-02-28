@@ -54,6 +54,8 @@ def main():
                         help='Number of examples in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=20,
                         help='Number of sweeps over the dataset to train')
+    parser.add_argument('--lr', type=float, default=1.0,
+                        help='learning rate of SGE')
     parser.add_argument('--gradclip', '-c', type=float, default=5,
                         help='Gradient norm threshold to clip')
     parser.add_argument('--layer', '-l', type=int, default=2,

@@ -281,20 +281,26 @@ class PlotAttentionReportMulEnc(extension.Extension):
         for idx, encatt_w in enumerate(encatt_ws):
             filename = "%s/%s.ep.{.updater.epoch}.encatt.png" % (
                 self.outdir, self.data[idx][0])
-
+            np_filename = "%s/%s.ep.{.updater.epoch}.encatt.npy" % (
+                self.outdir, self.data[idx][0])
             dec_len = ylens[idx]
             enc_len = num_enc
             encatt_w = encatt_w[:dec_len, :enc_len]
+            np.save(np_filename.format(trainer), encatt_w)
             self._plot_and_save_attention(encatt_w, filename.format(trainer))
+            self._plot_and_save_encattention(encatt_w, filename.format(trainer))
 
         # plot each attention: B x Lmax x Tmax (numpy)
         for att_idx, att_ws in enumerate(att_ws_list):
             for idx, att_w in enumerate(att_ws):
                 filename = "%s/%s.ep.{.updater.epoch}.att%d.png" % (
                     self.outdir, self.data[idx][0], att_idx)
+                np_filename = "%s/%s.ep.{.updater.epoch}.att%d.npy" % (
+                    self.outdir, self.data[idx][0], att_idx)
                 dec_len = ylens[idx]
                 enc_len = hlens_list[att_idx][idx]
                 att_w = att_w[:dec_len, :enc_len]
+                np.save(np_filename.format(trainer), att_w)
                 self._plot_and_save_attention(att_w, filename.format(trainer))
 
     def _plot_and_save_attention(self, att_w, filename):
@@ -303,6 +309,23 @@ class PlotAttentionReportMulEnc(extension.Extension):
         plt.imshow(att_w, aspect="auto")
         plt.xlabel("Encoder Index")
         plt.ylabel("Decoder Index")
+        plt.tight_layout()
+        plt.savefig(filename)
+        plt.close()
+
+    def _plot_and_save_encattention(self, att_w, filename):
+        # dynamically import matplotlib due to not found error
+        import matplotlib.pyplot as plt
+        legends = []
+        for i in range(att_w.shape[1]):
+            plt.plot(att_w[:,i])
+            legends.append('Enc{}'.format(i))
+        plt.ylim([0,1.0])
+        plt.xlim([0,att_w.shape[0]])
+        plt.grid(True)
+        plt.ylabel("Attention Weight")
+        plt.xlabel("Decoder Index")
+        plt.legend(legends)
         plt.tight_layout()
         plt.savefig(filename)
         plt.close()

@@ -193,6 +193,11 @@ def append_ids(yseq, ids):
             yseq[i].append(ids)
     return yseq
 
+def append_states(yseq, states):
+    for i, j in enumerate(states):
+        yseq[i].append(j)
+    return yseq
+
 
 def expand_yseq(yseqs, next_ids):
     new_yseq = []
@@ -276,6 +281,20 @@ def create_attention_module(eprojs, dunits, atype, adim, awin, aheads, aconv_cha
 class Reporter(chainer.Chain):
     def report(self, loss_ctc, loss_att, acc, cer, wer, mtl_loss):
         reporter.report({'loss_ctc': loss_ctc}, self)
+        reporter.report({'loss_att': loss_att}, self)
+        reporter.report({'acc': acc}, self)
+        reporter.report({'cer': cer}, self)
+        reporter.report({'wer': wer}, self)
+        logging.info('mtl loss:' + str(mtl_loss))
+        reporter.report({'loss': mtl_loss}, self)
+
+class ReporterMulEnc(chainer.Chain):
+    def report(self, loss_ctcs, loss_att, acc, cer, wer, mtl_loss):
+        # loss_ctcs = [weighted CTC, CTC1, CTC2, ... CTCN]
+        num_enc = len(loss_ctcs) - 1
+        reporter.report({'loss_ctc': loss_ctcs[0]}, self)
+        for i in range(num_enc):
+            reporter.report({'loss_ctc{}'.format(i+1): loss_ctcs[i+1]}, self)
         reporter.report({'loss_att': loss_att}, self)
         reporter.report({'acc': acc}, self)
         reporter.report({'cer': cer}, self)
@@ -649,8 +668,8 @@ class E2E(torch.nn.Module):
 
         return att_ws
 
-    def bnf(self, xs, args):
-        '''E2E extract bottleneck features
+    def bnf_enc(self, xs, args):
+        '''E2E extract bottleneck features (encoder output)
 
         :param list of ndarray x: list of input acoustic feature (T, D)
         :param namespace args: argument namespace containing options
@@ -678,6 +697,83 @@ class E2E(torch.nn.Module):
 
         return bnfs
 
+    def bnf_ctcpresm(self, xs, recog_args):
+        '''E2E extract bottleneck features (ctc presoftmax)
+
+        :param list of ndarray x: list of input acoustic feature list of (T, D)
+        :param namespace args: argument namespace containing options
+        :return: bottleneck features
+        :rtype: ndarray
+        '''
+        prev = self.training
+        self.eval()
+        # subsample frame
+        xs = [xx[::self.subsample[0], :] for xx in xs]
+        ilens = np.fromiter((xx.shape[0] for xx in xs), dtype=np.int64)
+        hs = [to_cuda(self, torch.from_numpy(np.array(xx, dtype=np.float32)))
+              for xx in xs]
+
+        # 1. encoder
+        xpad = pad_list(hs, 0.0)
+        hpad, hlens = self.enc(xpad, ilens)
+
+        # calculate log P(z_t|X) for CTC scores
+        lpz = self.ctc.log_softmax(hpad)
+
+        bnfs = unpad_list(lpz.cpu(), hlens.cpu())
+        bnfs = [bnf.numpy() for bnf in bnfs]
+
+        if prev:
+            self.train()
+
+        return bnfs
+
+    def bnf_dec(self, xs, recog_args, char_list, rnnlm=None):
+        '''E2E extract bottleneck features (decoder related features)
+
+        :param list of ndarray x: list of input acoustic feature list of (T, D)
+        :param namespace args: argument namespace containing options
+        :param list char_list: list of characters
+        :param torch.nn.Module rnnlm: language model module
+        :return: bottleneck features
+        :return: N-best decoding results
+        :rtype: ndarray, list
+        '''
+        prev = self.training
+        self.eval()
+        # subsample frame
+        xs = [xx[::self.subsample[0], :] for xx in xs]
+        ilens = np.fromiter((xx.shape[0] for xx in xs), dtype=np.int64)
+        hs = [to_cuda(self, torch.from_numpy(np.array(xx, dtype=np.float32)))
+              for xx in xs]
+
+        # 1. encoder
+        xpad = pad_list(hs, 0.0)
+        hpad, hlens = self.enc(xpad, ilens)
+
+        # calculate log P(z_t|X) for CTC scores
+        if recog_args.ctc_weight > 0.0:
+            lpz = self.ctc.log_softmax(hpad)
+        else:
+            lpz = None
+
+        # 2. decoder
+        y = self.dec.bnf_dec(hpad, hlens, lpz, recog_args, char_list, rnnlm)
+
+        bnfs = []
+
+        for i in range(len(xs)):
+            # get only the BEST path
+            bnfs.append(y[i][0]['bnf'])
+
+            # delete the numpy in the best paths
+            for j in range(recog_args.nbest): del y[i][0]['bnf']
+
+        if prev:
+            self.train()
+
+        return bnfs, y
+
 
 class Loss_MulEnc(torch.nn.Module):
     """Multi-task learning loss module
@@ -694,7 +790,7 @@ class Loss_MulEnc(torch.nn.Module):
         self.loss = None
         self.accuracy = None
         self.predictor = predictor
-        self.reporter = Reporter()
+        self.reporter = ReporterMulEnc()
 
     def forward(self, xs_pad, ilens, ys_pad):
         '''Multi-task learning loss forward
@@ -715,20 +811,20 @@ class Loss_MulEnc(torch.nn.Module):
         if alpha == 0:
             self.loss = loss_att
             loss_att_data = float(loss_att)
-            loss_ctc_data = None
+            loss_ctcs_data = [None] * (len(ctc_ws) + 1)
         elif alpha == 1:
             self.loss = torch.sum([item * ctc_ws[i] for i, item in enumerate(loss_ctc_list)])
             loss_att_data = None
-            loss_ctc_data = float(self.loss)
+            loss_ctcs_data = [float(self.loss)] + [float(item) for item in loss_ctc_list]
         else:
             loss_ctc = torch.sum(torch.cat([item * ctc_ws[i] for i, item in enumerate(loss_ctc_list)]))
             self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
             loss_att_data = float(loss_att)
-            loss_ctc_data = float(loss_ctc)
+            loss_ctcs_data = [float(loss_ctc)] + [float(item) for item in loss_ctc_list]
 
         loss_data = float(self.loss)
         if loss_data < CTC_LOSS_THRESHOLD and not math.isnan(loss_data):
-            self.reporter.report(loss_ctc_data, loss_att_data, acc, cer, wer, loss_data)
+            self.reporter.report(loss_ctcs_data, loss_att_data, acc, cer, wer, loss_data)
         else:
             logging.warning('loss (=%f) is not correct', loss_data)
 
@@ -3036,6 +3132,200 @@ class Decoder(torch.nn.Module):
 
         return nbest_hyps
 
+    def bnf_dec(self, h, hlens, lpz, recog_args, char_list, rnnlm=None,
+                             normalize_score=True):
+        logging.info('input lengths: ' + str(h.size(1)))
+        h = mask_by_length(h, hlens, 0.0)
+
+        # search params
+        batch = len(hlens)
+        beam = recog_args.beam_size
+        penalty = recog_args.penalty
+        ctc_weight = recog_args.ctc_weight
+        att_weight = 1.0 - ctc_weight
+        bnf_component = recog_args.bnf_component
+
+        n_bb = batch * beam
+        n_bo = beam * self.odim
+        n_bbo = n_bb * self.odim
+        pad_b = to_cuda(self, torch.LongTensor([i * beam for i in six.moves.range(batch)]).view(-1, 1))
+        pad_bo = to_cuda(self, torch.LongTensor([i * n_bo for i in six.moves.range(batch)]).view(-1, 1))
+        pad_o = to_cuda(self, torch.LongTensor([i * self.odim for i in six.moves.range(n_bb)]).view(-1, 1))
+
+        max_hlen = int(max(hlens))
+        if recog_args.maxlenratio == 0:
+            maxlen = max_hlen
+        else:
+            maxlen = max(1, int(recog_args.maxlenratio * max_hlen))
+        minlen = int(recog_args.minlenratio * max_hlen)
+        logging.info('max output length: ' + str(maxlen))
+        logging.info('min output length: ' + str(minlen))
+
+        # initialization
+        c_prev = [to_cuda(self, torch.zeros(n_bb, self.dunits)) for _ in range(self.dlayers)]
+        z_prev = [to_cuda(self, torch.zeros(n_bb, self.dunits)) for _ in range(self.dlayers)]
+        c_list = [to_cuda(self, torch.zeros(n_bb, self.dunits)) for _ in range(self.dlayers)]
+        z_list = [to_cuda(self, torch.zeros(n_bb, self.dunits)) for _ in range(self.dlayers)]
+        vscores = to_cuda(self, torch.zeros(batch, beam))
+
+        a_prev = None
+        rnnlm_prev = None
+
+        self.att.reset()  # reset pre-computation of h
+
+        yseq = [[self.sos] for _ in six.moves.range(n_bb)]
+        bnf = [[] for _ in six.moves.range(n_bb)]
+        accum_odim_ids = [self.sos for _ in six.moves.range(n_bb)]
+        stop_search = [False for _ in six.moves.range(batch)]
+        nbest_hyps = [[] for _ in six.moves.range(batch)]
+        ended_hyps = [[] for _ in range(batch)]
+
+        exp_hlens = hlens.repeat(beam).view(beam, batch).transpose(0, 1).contiguous()
+        exp_hlens = exp_hlens.view(-1).tolist()
+        exp_h = h.unsqueeze(1).repeat(1, beam, 1, 1).contiguous()
+        exp_h = exp_h.view(n_bb, h.size()[1], h.size()[2])
+
+        if lpz is not None:
+            device_id = torch.cuda.device_of(next(self.parameters()).data).idx
+            ctc_prefix_score = CTCPrefixScoreTH(lpz, 0, self.eos, beam, exp_hlens, device_id)
+            ctc_states_prev = ctc_prefix_score.initial_state()
+            ctc_scores_prev = to_cuda(self, torch.zeros(batch, n_bo))
+
+        for i in six.moves.range(maxlen):
+            logging.debug('position ' + str(i))
+
+            vy = to_cuda(self, torch.LongTensor(get_last_yseq(yseq)))
+            ey = self.embed(vy)
+            att_c, att_w = self.att(exp_h, exp_hlens, z_prev[0], a_prev)
+            ey = torch.cat((ey, att_c), dim=1)
+
+            # attention decoder
+            z_list[0], c_list[0] = self.decoder[0](ey, (z_prev[0], c_prev[0]))
+            for l in six.moves.range(1, self.dlayers):
+                z_list[l], c_list[l] = self.decoder[l](z_list[l - 1], (z_prev[l], c_prev[l]))
+            presm = self.output(z_list[-1]) # nbb x odim
+            local_scores = att_weight * F.log_softmax(presm, dim=1)
+
+            # rnnlm
+            if rnnlm:
+                rnnlm_state, local_lm_scores = rnnlm.buff_predict(rnnlm_prev, vy, n_bb)
+                local_scores = local_scores + recog_args.lm_weight * local_lm_scores
+            local_scores = local_scores.view(batch, n_bo)
+
+            # ctc
+            if lpz is not None:
+                ctc_scores, ctc_states = ctc_prefix_score(yseq, ctc_states_prev, accum_odim_ids)
+                ctc_scores = ctc_scores.view(batch, n_bo)
+                local_scores = local_scores + ctc_weight * (ctc_scores - ctc_scores_prev)
+            local_scores = local_scores.view(batch, beam, self.odim)
+
+            if i == 0:
+                local_scores[:, 1:, :] = self.logzero
+            local_best_scores, local_best_odims = torch.topk(local_scores.view(batch, beam, self.odim),
+                                                             beam, 2)
+            # local pruning (via xp)
+            local_scores = np.full((n_bbo,), self.logzero)
+            _best_odims = local_best_odims.view(n_bb, beam) + pad_o
+            _best_odims = _best_odims.view(-1).cpu().numpy()
+            _best_score = local_best_scores.view(-1).cpu().detach().numpy()
+            local_scores[_best_odims] = _best_score
+            local_scores = to_cuda(self, torch.from_numpy(local_scores).float()).view(batch, beam, self.odim)
+
+            # (or indexing)
+            # local_scores = to_cuda(self, torch.full((batch, beam, self.odim), self.logzero))
+            # _best_odims = local_best_odims
+            # _best_score = local_best_scores
+            # for si in six.moves.range(batch):
+            # for bj in six.moves.range(beam):
+            # for bk in six.moves.range(beam):
+            # local_scores[si, bj, _best_odims[si, bj, bk]] = _best_score[si, bj, bk]
+
+            eos_vscores = local_scores[:, :, self.eos] + vscores
+            vscores = vscores.view(batch, beam, 1).repeat(1, 1, self.odim)
+            vscores[:, :, self.eos] = self.logzero
+            vscores = (vscores + local_scores).view(batch, n_bo)
+
+            # global pruning
+            accum_best_scores, accum_best_ids = torch.topk(vscores, beam, 1)
+            accum_odim_ids = torch.fmod(accum_best_ids, self.odim).view(-1).data.cpu().tolist()
+            accum_padded_odim_ids = (torch.fmod(accum_best_ids, n_bo) + pad_bo).view(-1).data.cpu().tolist()
+            accum_padded_beam_ids = (torch.div(accum_best_ids, self.odim) + pad_b).view(-1).data.cpu().tolist()
+
+            y_prev = yseq[:][:]
+            bnf_prev = bnf[:][:]
+            yseq = index_select_list(yseq, accum_padded_beam_ids)
+            bnf = index_select_list(bnf, accum_padded_beam_ids)
+            yseq = append_ids(yseq, accum_odim_ids)
+            if bnf_component == 'ctxenc':
+                bnf = append_states(bnf, att_c[accum_padded_beam_ids]) # att_c: bb x hdim
+            elif bnf_component == 'decstate':
+                bnf = append_states(bnf, z_list[0][accum_padded_beam_ids]) # att_c: bb x dunit
+            elif bnf_component == 'decpresm':
+                bnf = append_states(bnf, presm[accum_padded_beam_ids]) # att_c: bb x odim
+            else:
+                raise ValueError("ctxenc, decstate and decpresm are only supported.")
+
+            vscores = accum_best_scores
+            vidx = to_cuda(self, torch.LongTensor(accum_padded_beam_ids))
+
+            a_prev = torch.index_select(att_w.view(n_bb, -1), 0, vidx)
+            z_prev = [torch.index_select(z_list[li].view(n_bb, -1), 0, vidx) for li in range(self.dlayers)]
+            c_prev = [torch.index_select(c_list[li].view(n_bb, -1), 0, vidx) for li in range(self.dlayers)]
+
+            if rnnlm:
+                rnnlm_prev = index_select_lm_state(rnnlm_state, 0, vidx)
+            if lpz is not None:
+                ctc_vidx = to_cuda(self, torch.LongTensor(accum_padded_odim_ids))
+                ctc_scores_prev = torch.index_select(ctc_scores.view(-1), 0, ctc_vidx)
+                ctc_scores_prev = ctc_scores_prev.view(-1, 1).repeat(1, self.odim).view(batch, n_bo)
+
+                ctc_states = torch.transpose(ctc_states, 1, 3).contiguous()
+                ctc_states = ctc_states.view(n_bbo, 2, -1)
+                ctc_states_prev = torch.index_select(ctc_states, 0, ctc_vidx).view(n_bb, 2, -1)
+                ctc_states_prev = torch.transpose(ctc_states_prev, 1, 2)
+
+            # pick ended hyps
+            if i > minlen:
+                k = 0
+                penalty_i = (i + 1) * penalty
+                thr = accum_best_scores[:, -1]
+                for samp_i in six.moves.range(batch):
+                    if stop_search[samp_i]:
+                        k = k + beam
+                        continue
+                    for beam_j in six.moves.range(beam):
+                        if eos_vscores[samp_i, beam_j] > thr[samp_i]:
+                            yk = y_prev[k][:]
+                            yk.append(self.eos)
+                            bnfk = torch.stack(bnf_prev[k][:], dim=0) # len(yk-1) x hdim
+                            assert bnfk.size()[0] == len(yk)-2
+                            if len(yk) < hlens[samp_i]:
+                                _vscore = eos_vscores[samp_i][beam_j] + penalty_i
+                                if normalize_score:
+                                    _vscore = _vscore / len(yk)
+                                _score = _vscore.data.cpu().numpy()
+                                _bnfk = bnfk.data.cpu().numpy()
+                                ended_hyps[samp_i].append({'yseq': yk, 'vscore': _vscore, 'score': _score, 'bnf': _bnfk})
+                        k = k + 1
+
+            # end detection
+            stop_search = [stop_search[samp_i] or end_detect(ended_hyps[samp_i], i)
+                           for samp_i in six.moves.range(batch)]
+            stop_search_summary = list(set(stop_search))
+            if len(stop_search_summary) == 1 and stop_search_summary[0]:
+                break
+
+            torch.cuda.empty_cache()
+
+        dummy_hyps = [{'yseq': [self.sos, self.eos], 'score':np.array([-float('inf')])}]
+        ended_hyps = [ended_hyps[samp_i] if len(ended_hyps[samp_i]) != 0 else dummy_hyps
+                      for samp_i in six.moves.range(batch)]
+        nbest_hyps = [sorted(ended_hyps[samp_i], key=lambda x: x['score'],
+                             reverse=True)[:min(len(ended_hyps[samp_i]), recog_args.nbest)]
+                      for samp_i in six.moves.range(batch)]
+
+        return nbest_hyps
+
     def calculate_all_attentions(self, hs_pad, hlen, ys_pad):
         '''Calculate all of attentions
 
@@ -3658,7 +3948,6 @@ class Decoder_MulEnc(torch.nn.Module):
                                     _vscore = _vscore / len(yk)
                                 _score = _vscore.data.cpu().numpy()
                                 ended_hyps[samp_i].append({'yseq': yk, 'vscore': _vscore, 'score': _score})
-                                # todo BEN add enca in hyps? to extract bnf features, just using ended_hyps to keep track?
                         k = k + 1
 
             # end detection

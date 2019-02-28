@@ -521,46 +521,94 @@ def bnf(args):
     e2e = E2E(idim, odim, train_args)
     model = Loss(e2e, train_args.mtlalpha)
     torch_load(args.model, model)
+    e2e.recog_args = args
+
+    # read rnnlm
+    if args.rnnlm:
+        rnnlm_args = get_model_conf(args.rnnlm, args.rnnlm_conf)
+        rnnlm = lm_pytorch.ClassifierWithState(
+            lm_pytorch.RNNLM(
+                len(train_args.char_list), rnnlm_args.layer, rnnlm_args.unit))
+        torch_load(args.rnnlm, rnnlm)
+        rnnlm.eval()
+    else:
+        rnnlm = None
+
+    if args.word_rnnlm:
+        rnnlm_args = get_model_conf(args.word_rnnlm, args.word_rnnlm_conf)
+        word_dict = rnnlm_args.char_list_dict
+        char_dict = {x: i for i, x in enumerate(train_args.char_list)}
+        word_rnnlm = lm_pytorch.ClassifierWithState(lm_pytorch.RNNLM(
+            len(word_dict), rnnlm_args.layer, rnnlm_args.unit))
+        torch_load(args.word_rnnlm, word_rnnlm)
+        word_rnnlm.eval()
+
+        if rnnlm is not None:
+            rnnlm = lm_pytorch.ClassifierWithState(
+                extlm_pytorch.MultiLevelLM(word_rnnlm.predictor,
+                                           rnnlm.predictor, word_dict, char_dict))
+        else:
+            rnnlm = lm_pytorch.ClassifierWithState(
+                extlm_pytorch.LookAheadWordLM(word_rnnlm.predictor,
+                                              word_dict, char_dict))
 
     # gpu
     if args.ngpu == 1:
         gpu_id = range(args.ngpu)
         logging.info('gpu id: ' + str(gpu_id))
         model.cuda()
+        if rnnlm:
+            rnnlm.cuda()
 
     # read json data
-    with open(args.feat_json, 'rb') as f:
+    with open(args.recog_json, 'rb') as f:
         js = json.load(f)['utts']
+    new_js = {}
 
+    try:
+        from itertools import zip_longest as zip_longest
+    except Exception:
+        from itertools import izip_longest as zip_longest
 
-    if args.bnf_component == 'enc':
-        try:
-            from itertools import zip_longest as zip_longest
-        except Exception:
-            from itertools import izip_longest as zip_longest
+    def grouper(n, iterable, fillvalue=None):
+        kargs = [iter(iterable)] * n
+        return zip_longest(*kargs, fillvalue=fillvalue)
 
-        def grouper(n, iterable, fillvalue=None):
-            kargs = [iter(iterable)] * n
-            return zip_longest(*kargs, fillvalue=fillvalue)
+    # sort data
+    keys = list(js.keys())
+    feat_lens = [js[key]['input'][0]['shape'][0] for key in keys]
+    sorted_index = sorted(range(len(feat_lens)), key=lambda i: -feat_lens[i])
+    keys = [keys[i] for i in sorted_index]
 
-        # sort data
-        keys = list(js.keys())
-        feat_lens = [js[key]['input'][0]['shape'][0] for key in keys]
-        sorted_index = sorted(range(len(feat_lens)), key=lambda i: -feat_lens[i])
-        keys = [keys[i] for i in sorted_index]
-
-
+    if args.bnf_component in ['ctcpresm', 'enc']:
         arkscp = 'ark:| copy-feats --print-args=false ark:- ark,scp:%s.ark,%s.scp' % (args.out, args.out)
         with torch.no_grad(), kaldi_io_py.open_or_fd(arkscp, 'wb') as f:
             for names in grouper(args.batchsize, keys, None):
                 names = [name for name in names if name]
                 feats = [kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
                          for name in names]
-                bnf_feats = e2e.bnf(feats, args) # list of numpy on cpu
+                bnf_feats = getattr(e2e,'bnf_{}'.format(args.bnf_component))(feats, args) # list of numpy on cpu
                 for key, mat in zip(names, bnf_feats):
                     kaldi_io_py.write_mat(f, mat, key=key)
+
+    elif args.bnf_component in ['ctxenc', 'decstate','decpresm']:
+        arkscp = 'ark:| copy-feats --print-args=false ark:- ark,scp:%s.ark,%s.scp' % (args.out, args.out)
+        with torch.no_grad(), kaldi_io_py.open_or_fd(arkscp, 'wb') as f:
+            for names in grouper(args.batchsize, keys, None):
+                names = [name for name in names if name]
+                feats = [kaldi_io_py.read_mat(js[name]['input'][0]['feat'])
+                         for name in names]
+                bnf_feats, nbest_hyps = e2e.bnf_dec(feats, args, train_args.char_list, rnnlm=rnnlm) # list of numpy on cpu
+                for i, nbest_hyp in enumerate(nbest_hyps):
+                    name = names[i]
+                    new_js[name] = add_results_to_json(js[name], nbest_hyp, train_args.char_list)
+                for key, mat in zip(names, bnf_feats):
+                    kaldi_io_py.write_mat(f, mat, key=key)
+        # TODO(watanabe) fix character coding problems when saving it
+        with open(args.result_label, 'wb') as f:
+            f.write(json.dumps({'utts': new_js}, indent=4, sort_keys=True).encode('utf_8'))
     else:
-        raise ValueError("Extraction of encoder output is only supported.")
+        raise ValueError("Invalid bnf component: {}".format(args.bnf_component))
 
 
 def train_pmerr(args):

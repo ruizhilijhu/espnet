@@ -64,6 +64,7 @@ lm_batchsize=300    # 1024 for character LMs
 lm_epochs=20        # number of epochs
 lm_maxlen=40        # 150 for character LMs
 lm_resume=          # specify a snapshot file to resume LM training
+lm_lr=1.0           # specify learning rate of SGE
 lmtag=              # tag for managing LMs
 
 # decoding parameter
@@ -182,7 +183,7 @@ fi
 # It takes about one day. If you just want to do end-to-end ASR without LM,
 # you can skip this and remove --rnnlm option in the recognition (stage 5)
 if [ -z ${lmtag} ]; then
-    lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}
+    lmtag=${lm_layers}layer_unit${lm_units}_${lm_opt}_bs${lm_batchsize}_lr${lm_lr}
     if [ $use_wordlm = true ]; then
         lmtag=${lmtag}_word${lm_vocabsize}
     fi
@@ -240,7 +241,8 @@ if [ ${stage} -le 3 ]; then
         --batchsize ${lm_batchsize} \
         --epoch ${lm_epochs} \
         --maxlen ${lm_maxlen} \
-        --dict ${lmdict}
+        --dict ${lmdict} \
+        --lr ${lm_lr}
 fi
 
 

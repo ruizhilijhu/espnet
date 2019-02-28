@@ -29,10 +29,12 @@ def main():
     parser.add_argument('--verbose', '-V', default=1, type=int,
                         help='Verbose option')
     parser.add_argument('--batchsize', default=1, type=int,
-                        help='Batch size for bnf extraction')
+                        help='Batch size for bnf extraction, [must be >= 1]')
     # task related
-    parser.add_argument('--feat-json', type=str,
-                        help='Filename of input data (json)')
+    parser.add_argument('--recog-json', type=str, required=True,
+                        help='Filename of recognition data (json)')
+    parser.add_argument('--result-label', type=str, default=None,
+                        help='Filename of result label data (json)')
     parser.add_argument('--out', type=str, required=True,
                         help='Output filename of bnf data')
     # model (parameter) related
@@ -40,8 +42,37 @@ def main():
                         help='Model file parameters to read')
     parser.add_argument('--model-conf', type=str, default=None,
                         help='Model config file')
-    parser.add_argument('--bnf-component', type=str, required=True,
+    parser.add_argument('--bnf-component', type=str, required=True, choices=['enc', 'ctcpresm', 'decpresm', 'decstate', 'ctxenc'],
                         help='Component to extract bnf')
+
+    # search related
+    parser.add_argument('--nbest', type=int, default=1,
+                        help='Output N-best hypotheses')
+    parser.add_argument('--beam-size', type=int, default=1,
+                        help='Beam size')
+    parser.add_argument('--penalty', default=0.0, type=float,
+                        help='Incertion penalty')
+    parser.add_argument('--maxlenratio', default=0.0, type=float,
+                        help="""Input length ratio to obtain max output length.
+                        If maxlenratio=0.0 (default), it uses a end-detect function
+                        to automatically find maximum hypothesis lengths""")
+    parser.add_argument('--minlenratio', default=0.0, type=float,
+                        help='Input length ratio to obtain min output length')
+    parser.add_argument('--ctc-weight', default=0.0, type=float,
+                        help='CTC weight in joint decoding')
+    # rnnlm related
+    parser.add_argument('--rnnlm', type=str, default=None,
+                        help='RNNLM model file to read')
+    parser.add_argument('--rnnlm-conf', type=str, default=None,
+                        help='RNNLM model config file to read')
+    parser.add_argument('--word-rnnlm', type=str, default=None,
+                        help='Word RNNLM model file to read')
+    parser.add_argument('--word-rnnlm-conf', type=str, default=None,
+                        help='Word RNNLM model config file to read')
+    parser.add_argument('--word-dict', type=str, default=None,
+                        help='Word list to read')
+    parser.add_argument('--lm-weight', default=0.1, type=float,
+                        help='RNNLM weight.')
     args = parser.parse_args()
 
     # logging info
@@ -80,15 +111,11 @@ def main():
 
     # bnf
     logging.info('backend = ' + args.backend)
-    if args.backend == "chainer":
-        # TODO: support in chainer
-        logging.error("Bnf extraction in chainer is not supported yet.")
-        sys.exit(1)
-    elif args.backend == "pytorch":
+    if args.backend == "pytorch":
         from espnet.asr.asr_pytorch import bnf
         bnf(args)
     else:
-        raise ValueError("chainer and pytorch are only supported.")
+        raise ValueError("pytorch is only supported.")
 
 
 if __name__ == '__main__':
