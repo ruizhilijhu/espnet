@@ -70,7 +70,7 @@ aurora4_test_eval92_restaurant_wv1 aurora4_test_eval92_restaurant_wv2 \
 aurora4_test_eval92_babble_wv1 aurora4_test_eval92_babble_wv2 \
 aurora4_test_eval92_car_wv1 aurora4_test_eval92_car_wv2 \
 aurora4_test_eval92_clean_wv1 aurora4_test_eval92_clean_wv2"
-pm_extra_set=
+pm_extra_set="dirha_real_KA6 dirha_real_LA6 dirha_sim_KA6 dirha_sim_LA6"
 
 
 ########### set up dict #########
@@ -117,7 +117,7 @@ if [ ${stage} -le 1 ]; then
         #### use CPU for bnf extraction
         ngpu=0
 
-        ${decode_cmd} JOB=1:${nj} ${bnfdir}/log/bnf.JOB.log \
+        ${decode_cmd1} JOB=1:${nj} ${bnfdir}/log/bnf.JOB.log \
             asr_bnf.py \
             --ngpu ${ngpu} \
             --backend ${backend} \
@@ -130,7 +130,9 @@ if [ ${stage} -le 1 ]; then
             ${recog_opts} &
         wait
 
-        score_sclite.sh --wer true --nlsyms ${nlsyms} ${bnfdir} ${dict}
+        if [[ $bnf_component == "decstate" ]]||[[ $bnf_component == "decpresm" ]] || [[ $bnf_component == "ctxenc" ]]; then
+            score_sclite.sh --wer true --nlsyms ${nlsyms} ${bnfdir} ${dict}
+        fi
 
         [ -e ${bnfdir}/feats.scp ] && rm ${bnfdir}/feats.scp
         cat ${bnfdir}/feats.*.scp > ${bnfdir}/feats.scp || exit 1
@@ -143,7 +145,7 @@ if [ ${stage} -le 1 ]; then
     wait
     echo "Finished: BNF -- ${bnf_component} extraction"
 fi
-
+exit 0
 ############### data preparation for pmerr and csdiseq #################
 if [ ${stage} -le 2 ]; then
     echo "stage 2: Label preparation"
@@ -156,6 +158,7 @@ if [ ${stage} -le 2 ]; then
         # for chime4 data only
         capital_uttid=
         [[ $task == chime4* ]] && capital_uttid="--capital-uttid"
+        [[ $task == dirha* ]] && capital_uttid="--capital-first-uttid"
 
         echo "$task WER"
         make_labels.py \
@@ -222,7 +225,7 @@ if [ ${stage} -le 3 ]; then
         ${pm_dev_dir}/feats.scp \
         ${pm_trn_dir}/cmvn.ark \
         ${pm_feat_dev_dir}/log ${pm_feat_dev_dir}
-    for rtask in ${pm_eval_set}; do
+    for rtask in ${pm_eval_set} ${pm_extra_set}; do
         pm_eval_dir=${asrdir}/bnf${bnf_component}_${decode_id}/${rtask} # data
         pm_feat_eval_dir=${pmdumpdir}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
         dump.sh --cmd "$train_cmd" --nj 4 --do_delta $do_delta \
@@ -240,7 +243,7 @@ if [ ${stage} -le 4 ]; then
          ${pm_trn_dir} ${dict} > ${pm_feat_trn_dir}/data_err.json
     data2json_err.sh --feat ${pm_feat_dev_dir}/feats.scp --nlsyms ${nlsyms} \
          ${pm_dev_dir} ${dict} > ${pm_feat_dev_dir}/data_err.json
-    for rtask in ${pm_eval_set}; do
+    for rtask in ${pm_eval_set} ${pm_extra_set}; do
         pm_eval_dir=${asrdir}/bnf${bnf_component}_${decode_id}/${rtask} # data
         pm_feat_eval_dir=${pmdumpdir}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
         data2json_err.sh --feat ${pm_feat_eval_dir}/feats.scp \
@@ -260,7 +263,7 @@ if [ ${stage} -le 5 ]; then
              ${pm_trn_dir} ${csdi_dict} > ${pm_feat_trn_dir}/data_csdiseq_${i}.json
         data2json_csdiseq.sh --feat ${pm_feat_dev_dir}/feats.scp --text ${pm_dev_dir}/utt2csdiseq${i} \
              ${pm_dev_dir} ${csdi_dict} > ${pm_feat_dev_dir}/data_csdiseq_${i}.json
-        for rtask in ${pm_eval_set}; do
+        for rtask in ${pm_eval_set} ${pm_extra_set}; do
             pm_eval_dir=${asrdir}/bnf${bnf_component}_${decode_id}/${rtask} # data
             pm_feat_eval_dir=${pmdumpdir}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
             data2json_csdiseq.sh --feat ${pm_feat_eval_dir}/feats.scp --text ${pm_eval_dir}/utt2csdiseq${i} \
@@ -330,7 +333,7 @@ if [ ${stage} -le 7 ]; then
         ${pm_dev_dir}/feats.scp \
         ${pm_trn_dir}/cmvn.ark \
         ${pm_feat_dev_dir}/log ${pm_feat_dev_dir}
-    for rtask in ${pm_eval_set}; do
+    for rtask in ${pm_eval_set} ${pm_extra_set}; do
         pm_eval_dir=${asrdir}/fbank_${decode_id}/${rtask} # data
         pm_feat_eval_dir=${asrdir}/dump_fbank_${decode_id}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
         dump.sh --cmd "$train_cmd" --nj 4 --do_delta $do_delta \
@@ -347,7 +350,7 @@ if [ ${stage} -le 8 ]; then
          ${pm_trn_dir} ${dict} > ${pm_feat_trn_dir}/data_err.json
     data2json_err.sh --feat ${pm_feat_dev_dir}/feats.scp --nlsyms ${nlsyms} \
          ${pm_dev_dir} ${dict} > ${pm_feat_dev_dir}/data_err.json
-    for rtask in ${pm_eval_set}; do
+    for rtask in ${pm_eval_set} ${pm_extra_set}; do
         pm_eval_dir=${asrdir}/fbank_${decode_id}/${rtask} # data
         pm_feat_eval_dir=${asrdir}/dump_fbank_${decode_id}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
         data2json_err.sh --feat ${pm_feat_eval_dir}/feats.scp \
@@ -366,7 +369,7 @@ if [ ${stage} -le 9 ]; then
              ${pm_trn_dir} ${csdi_dict} > ${pm_feat_trn_dir}/data_csdiseq_${i}.json
         data2json_csdiseq.sh --feat ${pm_feat_dev_dir}/feats.scp --text ${pm_dev_dir}/utt2csdiseq${i} \
              ${pm_dev_dir} ${csdi_dict} > ${pm_feat_dev_dir}/data_csdiseq_${i}.json
-        for rtask in ${pm_eval_set}; do
+        for rtask in ${pm_eval_set} ${pm_extra_set}; do
             pm_eval_dir=${asrdir}/fbank_${decode_id}/${rtask} # data
             pm_feat_eval_dir=${asrdir}/dump_fbank_${decode_id}/${pm_trn}/${rtask}/delta${do_delta}; mkdir -p ${pm_feat_eval_dir} # dump data
             data2json_csdiseq.sh --feat ${pm_feat_eval_dir}/feats.scp --text ${pm_eval_dir}/utt2csdiseq${i} \

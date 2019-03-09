@@ -18,3 +18,4 @@
 export train_cmd="queue.pl --mem 2G"
 export cuda_cmd="queue.pl --mem 2G --gpu 1 --config conf/gpu.conf"
 export decode_cmd="queue.pl --mem 4G"
+export decode_cmd1="queue.pl --mem 100G"

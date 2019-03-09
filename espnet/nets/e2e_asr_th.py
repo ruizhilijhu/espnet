@@ -972,7 +972,7 @@ class E2E_MulEnc(torch.nn.Module):
         - LSTM.upward.b[forget_gate_range] = 1 (but not used in NStepLSTM)
         """
         def lecun_normal_init_parameters(module):
-            for p in module.parameters():
+            for name, p in module.named_parameters():
                 data = p.data
                 if data.dim() == 1:
                     # bias
@@ -1439,12 +1439,7 @@ class AttAdd(torch.nn.Module):
         # weighted sum over flames
         # utt x hdim
         # NOTE use bmm instead of sum(*)
-        # todo BEN if the results are worse, change the view
-
-        # c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
-        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
-        # c_l2 = torch.sum(self.enc_h_l2 * w_l2.view(batch, self.h_length_l2, 1), dim=1)
-        c = torch.matmul(w.unsqueeze(1), self.enc_h).squeeze(1)
+        c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
 
         return c, w
 
@@ -3609,7 +3604,7 @@ class Decoder_MulEnc(torch.nn.Module):
         y = self.sos
         vy = h_list[0].new_zeros(1).long()
 
-        maxlen = int(min([h.shape[0] for h in h_list]))
+        maxlen = np.amin([h.shape[0] for h in h_list])
         if recog_args.maxlenratio != 0:
             # maxlen >= 1
             maxlen = max(1, int(recog_args.maxlenratio * maxlen))
@@ -3796,7 +3791,7 @@ class Decoder_MulEnc(torch.nn.Module):
         pad_bo = to_cuda(self, torch.LongTensor([i * n_bo for i in six.moves.range(batch)]).view(-1, 1))
         pad_o = to_cuda(self, torch.LongTensor([i * self.odim for i in six.moves.range(n_bb)]).view(-1, 1))
 
-        max_hlen = int(min([max(hlens) for hlens in hlens_list]))
+        max_hlen = np.amin([max(hlens) for hlens in hlens_list])
         if recog_args.maxlenratio == 0:
             maxlen = max_hlen
         else:

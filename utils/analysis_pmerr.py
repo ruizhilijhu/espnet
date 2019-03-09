@@ -4,35 +4,6 @@ import numpy as np
 
 dir = '/Users/ben_work/data'
 
-file_map = {
-'expt_bnfenc_err_cer_10.txt':'bnfenc_cer_bceloss (test)',
-'expt_bnfenc_err_wer_10.txt':'bnfenc_wer_bceloss (test)',
-'expt_bnfenc_err_cer_11.txt':'bnfenc_cer_mseloss (test)',
-'expt_bnfenc_err_wer_11.txt':'bnfenc_wer_mseloss (test)',
-'expt_fbank_err_cer_10.txt':'fbank_cer_bceloss (test)',
-'expt_fbank_err_wer_10.txt':'fbank_wer_bceloss (test)',
-'expt_fbank_err_cer_11.txt':'fbank_cer_mseloss (test)',
-'expt_fbank_err_wer_11.txt':'fbank_wer_mseloss (test)',
-
-'expt_bnfenc_err_cer_10.trn.txt':'bnfenc_cer_bceloss (train)',
-'expt_bnfenc_err_wer_10.trn.txt':'bnfenc_wer_bceloss (train)',
-'expt_bnfenc_err_cer_11.trn.txt':'bnfenc_cer_mseloss (train)',
-'expt_bnfenc_err_wer_11.trn.txt':'bnfenc_wer_mseloss (train)',
-'expt_fbank_err_cer_10.trn.txt':'fbank_cer_bceloss (train)',
-'expt_fbank_err_wer_10.trn.txt':'fbank_wer_bceloss (train)',
-'expt_fbank_err_cer_11.trn.txt':'fbank_cer_mseloss (train)',
-'expt_fbank_err_wer_11.trn.txt':'fbank_wer_mseloss (train)',
-
-'expt_ctcpresm_err_cer_10.txt':'ctcpresoftmax_cer_bceloss (test)',
-'expt_ctcpresm_err_wer_10.txt':'ctcpresoftmax_wer_bceloss (test)',
-
-'expt_bnfenc_err_3class_10.txt':'bnfenc_3class',
-'expt_bnfenc_err_3class_10.trn.txt':'bnfenc_3class (train)',
-
-
-}
-
-
 
 ####################### utils functions ###################################################
 # aurura 8 real and simu wsj 9
@@ -44,24 +15,25 @@ def read_result(f, dataset='all', mode='regression', datamode='trn'):
         for line in fh.readlines():
             name, err, rec_err = line.strip().split()
 
-
-
-            if dataset == 'wsj' and len(name) != 8 and datamode=='test':
+            if dataset == 'wsj' and not name.endswith('0') and datamode=='train':
+                continue
+            elif dataset == 'wsj' and len(name) != 8 and datamode=='test':
+                continue
+            elif dataset == 'aurora4' and not name.endswith('1') and datamode=='train':
+                continue
+            elif dataset == 'aurora4' and len(name) != 9 and datamode=='test':
                 continue
             elif dataset == 'chime4real' and not name.endswith('REAL'):
                 continue # apply to both test and trn
             elif dataset == 'chime4simu' and not name.endswith('SIMU'):
                 continue # apply to both test and trn
-            elif dataset == 'aurora4' and len(name) != 9 and datamode=='test':
-                continue
-            elif dataset == 'aurora4' and not name.endswith('1') and datamode=='trn':
-                continue
-            elif dataset == 'wsj' and not name.endswith('0') and datamode=='trn':
-                continue
             elif dataset == 'dirhaSim' and not name.startswith('Sim'):
                 continue
             elif dataset == 'dirhaReal' and not name.startswith('Real'):
                 continue
+            elif not (dataset in name):
+                continue
+
 
             names.append(name)
             errs.append(float(err))
@@ -72,11 +44,16 @@ def read_result(f, dataset='all', mode='regression', datamode='trn'):
 
         return names, np.array(errs), np.array(rec_errs)
 
+def plot_pmerr(dir, id, dataset, datamode, color, markersize=3):
+    names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset=dataset, datamode=datamode)
+    rho = np.corrcoef(errs, rec_errs)
+    plt.plot(errs, rec_errs, color, markersize=markersize, label='{:.3f}, {}'.format(rho[0,1], dataset))
+    return dataset, rho[0,1]
 
 
-# ####################### plot the CER and WER histogram for training data ############################
-# _, wer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_wer_10.trn.txt'), dataset='noclean')
-# _, cer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_cer_10.trn.txt'), dataset='noclean')
+# # ####################### plot the CER and WER histogram for training test data ############################
+# _, wer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_wer_10.test.txt'), dataset='noclean')
+# _, cer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_cer_10.test.txt'), dataset='noclean')
 #
 # # TODO: Very unbalance data
 #
@@ -85,7 +62,8 @@ def read_result(f, dataset='all', mode='regression', datamode='trn'):
 # # plt.axis([0, 2, 0, 6300])
 # plt.xlabel('Groundtruth WER')
 # plt.ylabel('Probability %')
-# plt.title('Histogram of WER in train data')
+# plt.title('Histogram of WER in PM test data')
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots', 'hist_pm_test_wer'), format='png',dpi=300)
 # plt.grid(True)
 #
 # plt.figure()
@@ -93,77 +71,116 @@ def read_result(f, dataset='all', mode='regression', datamode='trn'):
 # # plt.axis([0, 2, 0, 5])
 # plt.xlabel('Groundtruth CER')
 # plt.ylabel('Probability %')
-# plt.title('Histogram of CER in train data')
+# plt.title('Histogram of CER in PM test data')
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots', 'hist_pm_test_cer'), format='png',dpi=300)
 # plt.grid(True)
 #
 # plt.show()
 
 
 # ####################### regression ############################
-markersize=4
+# markersize=3
+# err='cer'
+# feat='bnfenc'
+# id_tmp = 'expt_{}_err_{}_20.{}.txt'
+# loss='bceloss'
+#
+# # #### train data ######
+# rho_list = []
+# plt.figure()
+# id = id_tmp.format(feat, err, 'train')
+# rho_list.append(plot_pmerr(dir, id, 'aurora4', 'train', 'c.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'wsj', 'train', 'b.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4real', 'train', 'r.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4simu', 'train', 'g.', markersize))
+#
+# plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
+# plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
+# plt.legend(loc='upper left')
+# name = '{}_{}_{} ({})'.format(feat, err, loss, 'train')
+# plt.title(name)
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png', dpi=300)
+#
+# # print corelation coefficient
+# print (name)
+# for i,j in rho_list:
+#     print "{:.3f}".format(j)
+#
+#
+# #### test data ######
+# rho_list = []
+# plt.figure()
+# id = id_tmp.format(feat, err, 'test')
+# rho_list.append(plot_pmerr(dir, id, 'wsj', 'test', 'b.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'aurora4', 'test', 'c.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4real', 'test', 'r.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4simu', 'test', 'g.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'dirhaReal', 'test', 'm.'))
+# rho_list.append(plot_pmerr(dir, id, 'dirhaSim', 'test', 'k.'))
+#
+# plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
+# plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
+# plt.legend(loc='upper left')
+# name = '{}_{}_{} ({})'.format(feat, err, loss, 'test')
+# plt.title(name)
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png',dpi=300)
+# print (name)
+# for i,j in rho_list:
+#     print "{:.3f}".format(j)
+
+
+
+####################### speaker  ############################
+markersize=3
 err='cer'
 feat='bnfenc'
-
-#### test data ######
-plt.figure()
-id = 'expt_{}_err_{}_10.txt'.format(feat, err)
-names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4real', datamode='test')
-plt.plot(errs, rec_errs, 'r.', markersize=markersize)
-names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4simu', datamode='test')
-plt.plot(errs, rec_errs, 'g.', markersize=markersize)
-
-names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='aurora4', datamode='test')
-plt.plot(errs, rec_errs, 'c.', markersize=markersize)
-names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='wsj', datamode='test')
-plt.plot(errs, rec_errs, 'b.', markersize=markersize)
-
-# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.{}.txt'.format(dir, feat, err, 'LA6'), dataset='dirhaReal', datamode='test')
-# plt.plot(errs, rec_errs, 'm.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.{}.txt'.format(dir, feat, err, 'KA6'), dataset='dirhaReal', datamode='test')
-# plt.plot(errs, rec_errs, 'k.', markersize=markersize)
-
-# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaReal', datamode='test')
-# plt.plot(errs, rec_errs, 'm.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/expt_{}_err_{}_10.dirha.txt'.format(dir, feat, err), dataset='dirhaSim', datamode='test')
-# plt.plot(errs, rec_errs, 'g.', markersize=markersize)
-
-plt.ylim([0.,1.])
-plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
-plt.xlabel('Groundtruth')
-plt.ylabel('Prediction')
-plt.legend(['chime4real', 'chime4simu', 'aurora4','wsj', 'dirhaRealLA6', 'dirhaRealKA6'])
-# plt.legend(['dirhaReal', 'dirhaSim'])
-
-plt.title('{}'.format(file_map[id]))
+id_tmp = 'expt_{}_err_{}_20.{}.txt'
+loss='bceloss'
 
 
 # #### train data ######
+rho_list = []
+plt.figure()
+id = id_tmp.format(feat, err, 'train')
+rho_list.append(plot_pmerr(dir, id, 'BUS.CH', 'train', 'c.', markersize))
+
+plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
+plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
+plt.legend(loc='upper left')
+name = '{}_{}_{} ({})'.format(feat, err, loss, 'train')
+plt.title(name)
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png', dpi=300)
+
+# print corelation coefficient
+print (name)
+for i,j in rho_list:
+    print "{:.3f}".format(j)
+
+
+# #### test data ######
+# rho_list = []
 # plt.figure()
-# id = 'expt_{}_err_{}_10.trn.txt'.format(feat, err)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4real')
-# plt.plot(errs, rec_errs, 'r.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='chime4simu')
-# plt.plot(errs, rec_errs, 'g.', markersize=markersize)
+# id = id_tmp.format(feat, err, 'test')
+# rho_list.append(plot_pmerr(dir, id, 'wsj', 'test', 'b.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'aurora4', 'test', 'c.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4real', 'test', 'r.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'chime4simu', 'test', 'g.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'dirhaReal', 'test', 'm.'))
+# rho_list.append(plot_pmerr(dir, id, 'dirhaSim', 'test', 'k.'))
 #
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='aurora4')
-# plt.plot(errs, rec_errs, 'c.', markersize=markersize)
-# names, errs, rec_errs = read_result('{}/{}'.format(dir, id), dataset='wsj')
-# plt.plot(errs, rec_errs, 'b.', markersize=markersize)
-#
-# plt.ylim([0.,1.])
-# plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
-# plt.xlabel('Groundtruth')
-# plt.ylabel('Prediction')
-# plt.legend(['chime4real', 'chime4simu', 'aurora4','wsj'])
-# plt.title('{}'.format(file_map[id]))
-plt.show()
+# plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
+# plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
+# plt.legend(loc='upper left')
+# name = '{}_{}_{} ({})'.format(feat, err, loss, 'test')
+# plt.title(name)
+# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png',dpi=300)
+# print (name)
+# for i,j in rho_list:
+#     print "{:.3f}".format(j)
 
 
-#
-#
-#
-#
-#
+
+
 # # ####################### classification ############################
 # from sklearn.metrics import confusion_matrix
 # id = 'expt_bnfenc_err_3class_10.trn.txt'
@@ -195,3 +212,8 @@ plt.show()
 # plt.xlabel('fbank')
 # plt.ylabel('bnfenc')
 # plt.show()
+
+
+
+
+plt.show()
