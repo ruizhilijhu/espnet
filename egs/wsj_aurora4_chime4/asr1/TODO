@@ -1,0 +1,10 @@
+TODO:
+GOAL: tell if the dnn is working properly or not, --> binary question?
+
+1. extract ctxenc and decstate, see the correlation
+2. implement entropy (post), m-measure (post), ncca(any), and autoencoder(any) for comparison
+3. see the prediction difference between features and decpresm
+4. plot fbank, encout, ctcpresm, decpsm, ctcpost, dec-post for ??? utterance that my pm is good at but other pms are bad at?
+5. how to conclude which PMs is good? teo varilbaes (scores v.s. wer)
+6. decode only ctc and only decoder and see how much they contribute to cer and see if the alpha is also corealted with predicted CER from decpresm and ctcpresm
+7. decode on some slightly corrupted data

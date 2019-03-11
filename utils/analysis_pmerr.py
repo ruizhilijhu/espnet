@@ -2,8 +2,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-dir = '/Users/ben_work/data'
-
+dir = '/Users/BenLi/PycharmProjects/espnet_data/pmerr'
+plotdir='/Users/BenLi/PycharmProjects/espnet_data/pmerr/plots'
 
 ####################### utils functions ###################################################
 # aurura 8 real and simu wsj 9
@@ -31,7 +31,24 @@ def read_result(f, dataset='all', mode='regression', datamode='trn'):
                 continue
             elif dataset == 'dirhaReal' and not name.startswith('Real'):
                 continue
-            elif not (dataset in name):
+
+            names.append(name)
+            errs.append(float(err))
+            if mode=='regression':
+                rec_errs.append(float(rec_err[1:-1]))
+            elif mode== 'classification':
+                rec_errs.append(float(rec_err))
+
+        return names, np.array(errs), np.array(rec_errs)
+
+def read_result_speaker_noise(f, dataset='all', mode='regression', datamode='trn'):
+    names = []
+    errs = []
+    rec_errs = []
+    with open(f) as fh:
+        for line in fh.readlines():
+            name, err, rec_err = line.strip().split()
+            if not (dataset in name):
                 continue
 
 
@@ -50,39 +67,43 @@ def plot_pmerr(dir, id, dataset, datamode, color, markersize=3):
     plt.plot(errs, rec_errs, color, markersize=markersize, label='{:.3f}, {}'.format(rho[0,1], dataset))
     return dataset, rho[0,1]
 
+def plot_pmerr_speaker_noise(dir, id, dataset, datamode, color, markersize=3):
+    names, errs, rec_errs = read_result_speaker_noise('{}/{}'.format(dir, id), dataset=dataset, datamode=datamode)
+    rho = np.corrcoef(errs, rec_errs)
+    plt.plot(errs, rec_errs, color, markersize=markersize, label='{:.3f}, {}'.format(rho[0,1], dataset))
+    return dataset, rho[0,1]
 
 # # ####################### plot the CER and WER histogram for training test data ############################
-# _, wer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_wer_10.test.txt'), dataset='noclean')
-# _, cer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_cer_10.test.txt'), dataset='noclean')
-#
-# # TODO: Very unbalance data
+# _, wer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_wer_10.test.txt'), dataset='all')
+# _, cer, _ = read_result('{}/{}'.format(dir, 'expt_bnfenc_err_cer_10.test.txt'), dataset='all')
 #
 # plt.figure()
-# n, bins, patches = plt.hist(wer, 200, range=[0, 2], density=True)
+# n, bins, patches = plt.hist(wer, 200, range=[0, 2], normed=True)
 # # plt.axis([0, 2, 0, 6300])
 # plt.xlabel('Groundtruth WER')
 # plt.ylabel('Probability %')
 # plt.title('Histogram of WER in PM test data')
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots', 'hist_pm_test_wer'), format='png',dpi=300)
 # plt.grid(True)
+# plt.savefig('{}/{}.png'.format(plotdir, 'hist_pm_test_wer'), format='png',dpi=300)
+#
 #
 # plt.figure()
-# n, bins, patches = plt.hist(cer, 200,range=[0, 1], density=True)
+# n, bins, patches = plt.hist(cer, 200,range=[0, 1],normed=True)
 # # plt.axis([0, 2, 0, 5])
 # plt.xlabel('Groundtruth CER')
 # plt.ylabel('Probability %')
 # plt.title('Histogram of CER in PM test data')
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots', 'hist_pm_test_cer'), format='png',dpi=300)
 # plt.grid(True)
+# plt.savefig('{}/{}.png'.format(plotdir, 'hist_pm_test_cer'), format='png',dpi=300)
 #
-# plt.show()
+
 
 
 # ####################### regression ############################
 # markersize=3
 # err='cer'
-# feat='bnfenc'
-# id_tmp = 'expt_{}_err_{}_20.{}.txt'
+# feat='decpresm'
+# id_tmp = 'expt_{}_err_{}_10.{}.txt'
 # loss='bceloss'
 #
 # # #### train data ######
@@ -99,7 +120,7 @@ def plot_pmerr(dir, id, dataset, datamode, color, markersize=3):
 # plt.legend(loc='upper left')
 # name = '{}_{}_{} ({})'.format(feat, err, loss, 'train')
 # plt.title(name)
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png', dpi=300)
+# plt.savefig('{}/{}.png'.format(plotdir,name), format='png', dpi=300)
 #
 # # print corelation coefficient
 # print (name)
@@ -111,8 +132,8 @@ def plot_pmerr(dir, id, dataset, datamode, color, markersize=3):
 # rho_list = []
 # plt.figure()
 # id = id_tmp.format(feat, err, 'test')
-# rho_list.append(plot_pmerr(dir, id, 'wsj', 'test', 'b.', markersize))
 # rho_list.append(plot_pmerr(dir, id, 'aurora4', 'test', 'c.', markersize))
+# rho_list.append(plot_pmerr(dir, id, 'wsj', 'test', 'b.', markersize))
 # rho_list.append(plot_pmerr(dir, id, 'chime4real', 'test', 'r.', markersize))
 # rho_list.append(plot_pmerr(dir, id, 'chime4simu', 'test', 'g.', markersize))
 # rho_list.append(plot_pmerr(dir, id, 'dirhaReal', 'test', 'm.'))
@@ -123,57 +144,35 @@ def plot_pmerr(dir, id, dataset, datamode, color, markersize=3):
 # plt.legend(loc='upper left')
 # name = '{}_{}_{} ({})'.format(feat, err, loss, 'test')
 # plt.title(name)
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png',dpi=300)
+# plt.savefig('{}/{}.png'.format(plotdir,name), format='png',dpi=300)
 # print (name)
 # for i,j in rho_list:
 #     print "{:.3f}".format(j)
 
 
 
-####################### speaker  ############################
-markersize=3
-err='cer'
-feat='bnfenc'
-id_tmp = 'expt_{}_err_{}_20.{}.txt'
-loss='bceloss'
-
-
-# #### train data ######
-rho_list = []
-plt.figure()
-id = id_tmp.format(feat, err, 'train')
-rho_list.append(plot_pmerr(dir, id, 'BUS.CH', 'train', 'c.', markersize))
-
-plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
-plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
-plt.legend(loc='upper left')
-name = '{}_{}_{} ({})'.format(feat, err, loss, 'train')
-plt.title(name)
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png', dpi=300)
-
-# print corelation coefficient
-print (name)
-for i,j in rho_list:
-    print "{:.3f}".format(j)
-
-
-# #### test data ######
+# ####################### speaker or noise  ############################
+# markersize=3
+# err='cer'
+# feat='bnfenc'
+# id_tmp = 'expt_{}_err_{}_20.{}.txt'
+# loss='bceloss'
+# property = 'BUS.CH' # partial name in the utterance name
+#
+# # #### train data ######
 # rho_list = []
 # plt.figure()
-# id = id_tmp.format(feat, err, 'test')
-# rho_list.append(plot_pmerr(dir, id, 'wsj', 'test', 'b.', markersize))
-# rho_list.append(plot_pmerr(dir, id, 'aurora4', 'test', 'c.', markersize))
-# rho_list.append(plot_pmerr(dir, id, 'chime4real', 'test', 'r.', markersize))
-# rho_list.append(plot_pmerr(dir, id, 'chime4simu', 'test', 'g.', markersize))
-# rho_list.append(plot_pmerr(dir, id, 'dirhaReal', 'test', 'm.'))
-# rho_list.append(plot_pmerr(dir, id, 'dirhaSim', 'test', 'k.'))
+# id = id_tmp.format(feat, err, 'train')
+# rho_list.append(plot_pmerr_speaker_noise(dir, id, property, 'train', 'c.', markersize))
 #
 # plt.ylim([0.,1.]); plt.xlim([-0.05,1.1]) if err=='cer' else plt.xlim([-0.1,2])
 # plt.xlabel('Groundtruth'); plt.ylabel('Prediction')
 # plt.legend(loc='upper left')
-# name = '{}_{}_{} ({})'.format(feat, err, loss, 'test')
+# name = '{}_{}_{} ({})'.format(feat, err, loss, 'train')
 # plt.title(name)
-# plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png',dpi=300)
+# # plt.savefig('{}/{}.png'.format('/Users/ben_work/Desktop/plots',name), format='png', dpi=300)
+#
+# # print corelation coefficient
 # print (name)
 # for i,j in rho_list:
 #     print "{:.3f}".format(j)
@@ -190,30 +189,27 @@ for i,j in rho_list:
 
 
 
-#
-# # ####################### regression ############################
-# markersize=1
-# err='cer'
-#
-# dataset='chime4simu'
-#
-# #### train ######
-# plt.figure()
-# id = 'expt_{}_err_{}_10.trn.txt'.format('fbank', err)
-# names_1, errs_1, rec_errs_1 = read_result('{}/{}'.format(dir, id), dataset=dataset, datamode='trn')
-# id = 'expt_{}_err_{}_10.trn.txt'.format('bnfenc', err)
-# names_2, errs_2, rec_errs_2 = read_result('{}/{}'.format(dir, id), dataset=dataset, datamode='trn')
-# plt.plot(rec_errs_1-errs_1, rec_errs_2-errs_1, '.', markersize=markersize)
-# plt.plot([-0.5,0.5],[-0.5,0.5])
-# plt.ylim([-0.5,0.5])
-# plt.xlim([-0.5,0.5])
-#
-# plt.grid()
-# plt.xlabel('fbank')
-# plt.ylabel('bnfenc')
-# plt.show()
 
+# ####################### regression ############################
+markersize=3
+err='cer'
+feat1='fbank'
+feat2='decpresm'
+id = 'expt_{}_err_{}_10.{}.txt'
+dataset='aurora4'
+datamode='train'
 
+#### train ######
+plt.figure()
+names_1, errs_1, rec_errs_1 = read_result('{}/{}'.format(dir, id.format(feat1,err, datamode)), dataset=dataset, datamode=datamode)
+names_2, errs_2, rec_errs_2 = read_result('{}/{}'.format(dir, id.format(feat2, err, datamode)), dataset=dataset, datamode=datamode)
+print (rec_errs_1-errs_1)
+plt.plot(rec_errs_1-errs_1, rec_errs_2-errs_1, '.', markersize=markersize)
+plt.plot([-0.5,0.5],[-0.5,0.5])
+plt.ylim([-0.6,0.6])
+plt.xlim([-0.6,0.6])
 
-
+plt.grid()
+plt.xlabel(feat1)
+plt.ylabel(feat2)
 plt.show()
