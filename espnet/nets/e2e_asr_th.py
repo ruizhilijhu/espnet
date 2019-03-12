@@ -254,6 +254,8 @@ def create_attention_module(eprojs, dunits, atype, adim, awin, aheads, aconv_cha
         att = AttDot(eprojs, dunits, adim)
     elif atype == 'add':
         att = AttAdd(eprojs, dunits, adim, store_hs=store_hs)
+    elif atype == 'enc2add':
+        att = Enc2AttAdd(eprojs, dunits, adim)
     elif atype == 'location':
         att = AttLoc(eprojs, dunits, adim, aconv_chans, aconv_filts)
     elif atype == 'location2d':
@@ -890,7 +892,7 @@ class E2E_MulEnc(torch.nn.Module):
         dlayers = model_dict['decoder']['dlayers']
         dunits = model_dict['decoder']['dunits']
 
-        # set up encoder and attention for each encoder
+        # encoder
         for i in six.moves.range(self.num_enc):
             # load config
             etype = model_dict['encoders'][i]['etype']
@@ -913,18 +915,36 @@ class E2E_MulEnc(torch.nn.Module):
             setattr(self, "enc{}".format(i), Encoder(etype, idim, elayers, eunits, eprojs,
                            subsample, dropout_rate))
 
+        # ctc
+        for i in six.moves.range(self.num_enc):
+            # load config
+            eprojs = model_dict['encoders'][i]['eprojs']
+            dropout_rate = model_dict['encoders'][i]['dropout_rate']
+
             # set up ctc
             if not self.sharectc:
                 # dropout is applied to the encoder outout
                 setattr(self, "ctc{}".format(i), CTC(odim, eprojs, dropout_rate))
 
+        # attention
+        for i in six.moves.range(self.num_enc):
+            # load config
+            eprojs = model_dict['encoders'][i]['eprojs']
+            atype = model_dict['encoders'][i]['atype']
+            adim = model_dict['encoders'][i]['adim']
+            awin = model_dict['encoders'][i]['awin']
+            aheads = model_dict['encoders'][i]['aheads']
+            aconv_chans = model_dict['encoders'][i]['aconv_chans']
+            aconv_filts = model_dict['encoders'][i]['aconv_filts']
+
             # set up attention
-            setattr(self, "att{}".format(i), create_attention_module(eprojs, dunits, atype, adim, awin, aheads, aconv_chans, aconv_filts))
+            # setattr(self, "att{}".format(i), create_attention_module(eprojs, dunits, atype, adim, awin, aheads, aconv_chans, aconv_filts))
+        # self.att_list =  [getattr(self, "att{}".format(i)) for i in six.moves.range(self.num_enc)]
+        self.att_list = [None] * self.num_enc
 
         # subsapmle
         encs_subsample_1 = [self.subsample[i][0] for i in six.moves.range(self.num_enc)]
         assert len(set(encs_subsample_1)) == 1, 'first subsample factor needs to be the same for all encoders'
-
         # encoder attention
         atype = model_dict['encatt']['atype']
         adim = model_dict['encatt']['adim']
@@ -932,8 +952,7 @@ class E2E_MulEnc(torch.nn.Module):
         aheads = model_dict['encatt']['aheads']
         aconv_chans = model_dict['encatt']['aconv_chans']
         aconv_filts = model_dict['encatt']['aconv_filts']
-        self.encatt = create_attention_module(encs_eprojs[0], dunits, atype, adim, awin, aheads, aconv_chans, aconv_filts, store_hs=False)
-        self.att_list =  [getattr(self, "att{}".format(i)) for i in six.moves.range(self.num_enc)]
+        self.encatt = create_attention_module(encs_eprojs[0], dunits, 'enc2add', adim, awin, aheads, aconv_chans, aconv_filts, store_hs=False)
 
         # decoder
         self.dec = Decoder_MulEnc(encs_eprojs[0], odim, dlayers, dunits,
@@ -1439,7 +1458,8 @@ class AttAdd(torch.nn.Module):
         # weighted sum over flames
         # utt x hdim
         # NOTE use bmm instead of sum(*)
-        c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        # c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        c = torch.matmul(w.unsqueeze(1), self.enc_h).squeeze(1)
 
         return c, w
 
@@ -3502,7 +3522,7 @@ class Decoder_MulEnc(torch.nn.Module):
         att_c_list = [None] * num_enc
         encatt_w = None
         z_all = []
-        for att in self.att_list : att.reset()  # reset pre-computation of h
+        # for att in self.att_list : att.reset()  # reset pre-computation of h
         self.encatt.reset()  # reset pre-computation of h
 
         # pre-computation of embedding
@@ -3510,13 +3530,14 @@ class Decoder_MulEnc(torch.nn.Module):
 
         # loop for an output sequence
         for i in six.moves.range(olength):
-            # att
-            for idx, att in enumerate(self.att_list):
-                att_c_list[idx], att_w_list[idx] = att(hs_pad_list[idx], hlens_list[idx], z_list[0], att_w_list[idx])
-            # str
-            encatt_hs_pad = torch.stack(att_c_list, dim=1)
-            encatt_hlens = [num_enc] * batch
-            encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_list[0], encatt_w)
+            # # att
+            # for idx, att in enumerate(self.att_list):
+            #     att_c_list[idx], att_w_list[idx] = getattr(self, "att{}".format(idx))(hs_pad_list[idx], hlens_list[idx], z_list[0], att_w_list[idx])
+            # # str
+            # encatt_hs_pad = torch.stack(att_c_list, dim=1)
+            # encatt_hlens = [num_enc] * batch
+            # encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_list[0], encatt_w)
+            encatt_c, encatt_w = self.encatt(hs_pad_list, hlens_list, z_list[0], encatt_w)
             if i > 0 and random.random() < self.sampling_probability:
                 logging.info(' scheduled sampling ')
                 z_out = self.output(z_all[-1])
@@ -3587,7 +3608,7 @@ class Decoder_MulEnc(torch.nn.Module):
             z_list.append(self.zero_state(h_list[0].unsqueeze(0)))
         a_list = [None] * self.num_enc
         enca = None
-        for att in self.att_list: att.reset()  # reset pre-computation of h
+        # for att in self.att_list: att.reset()  # reset pre-computation of h
         self.encatt.reset()  # reset pre-computation of h
 
         # search parms
@@ -3641,11 +3662,12 @@ class Decoder_MulEnc(torch.nn.Module):
                 ey.unsqueeze(0)
                 att_w_list = [None] * self.num_enc
                 att_c_list = [None] * self.num_enc
-                for idx, att in enumerate(self.att_list):
-                    att_c_list[idx], att_w_list[idx] = att(h_list[idx].unsqueeze(0), [h_list[idx].size(0)], hyp['z_prev'][0], hyp['a_prev_list'][idx])
-                encatt_hs_pad = torch.stack(att_c_list, dim=1)
-                encatt_hlens = [self.num_enc]
-                encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, hyp['z_prev'][0], hyp['enca_prev'])
+                # for idx, att in enumerate(self.att_list):
+                #     att_c_list[idx], att_w_list[idx] = att(h_list[idx].unsqueeze(0), [h_list[idx].size(0)], hyp['z_prev'][0], hyp['a_prev_list'][idx])
+                # encatt_hs_pad = torch.stack(att_c_list, dim=1)
+                # encatt_hlens = [self.num_enc]
+                # encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, hyp['z_prev'][0], hyp['enca_prev'])
+                encatt_c, encatt_w = self.encatt([h.unsqueeze(0) for h in h_list], [[h.size(0)] for h in h_list], hyp['z_prev'][0], hyp['enca_prev'])
                 ey = torch.cat((ey, encatt_c), dim=1) # utt(1) x (zdim + hdim)
                 z_list[0], c_list[0] = self.decoder[0](ey, (hyp['z_prev'][0], hyp['c_prev'][0]))
                 for l in six.moves.range(1, self.dlayers):
@@ -3811,7 +3833,7 @@ class Decoder_MulEnc(torch.nn.Module):
         enca_prev = None
         rnnlm_prev = None
 
-        for att in self.att_list : att.reset()  # reset pre-computation of h
+        # for att in self.att_list : att.reset()  # reset pre-computation of h
         self.encatt.reset()  # reset pre-computation of h
 
         yseq = [[self.sos] for _ in six.moves.range(n_bb)]
@@ -3839,11 +3861,12 @@ class Decoder_MulEnc(torch.nn.Module):
             ey = self.embed(vy)
             att_w_list = [None] * self.num_enc
             att_c_list = [None] * self.num_enc
-            for idx, att in enumerate(self.att_list):
-                att_c_list[idx], att_w_list[idx] = att(exp_h_list[idx], exp_hlens_list[idx], z_prev[0], a_prev_list[idx])
-            encatt_hs_pad = torch.stack(att_c_list, dim=1)
-            encatt_hlens = [self.num_enc] * n_bb
-            encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_prev[0], enca_prev)
+            # for idx, att in enumerate(self.att_list):
+            #     att_c_list[idx], att_w_list[idx] = att(exp_h_list[idx], exp_hlens_list[idx], z_prev[0], a_prev_list[idx])
+            # encatt_hs_pad = torch.stack(att_c_list, dim=1)
+            # encatt_hlens = [self.num_enc] * n_bb
+            # encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_prev[0], enca_prev)
+            encatt_c, encatt_w = self.encatt(exp_h_list, exp_hlens_list, z_prev[0], enca_prev)
             ey = torch.cat((ey, encatt_c), dim=1)
 
             # attention decoder
@@ -4012,7 +4035,7 @@ class Decoder_MulEnc(torch.nn.Module):
         encatt_w = None
         attws_list = [[] for _ in range(self.num_enc)]
         encatt_ws = []
-        for att in self.att_list : att.reset()  # reset pre-computation of h
+        # for att in self.att_list : att.reset()  # reset pre-computation of h
         self.encatt.reset()  # reset pre-computation of h
 
         # pre-computation of embedding
@@ -4020,14 +4043,15 @@ class Decoder_MulEnc(torch.nn.Module):
 
         # loop for an output sequence
         for i in six.moves.range(olength):
-            # att
-            for idx, att in enumerate(self.att_list):
-                att_c_list[idx], att_w_list[idx] = att(hs_pad_list[idx], hlens_list[idx], z_list[0], att_w_list[idx])
-                attws_list[idx].append(att_w_list[idx])
-            # str
-            encatt_hs_pad = torch.stack(att_c_list, dim=1)
-            encatt_hlens = [self.num_enc] * batch
-            encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_list[0], encatt_w)
+            # # att
+            # for idx, att in enumerate(self.att_list):
+            #     att_c_list[idx], att_w_list[idx] = att(hs_pad_list[idx], hlens_list[idx], z_list[0], att_w_list[idx])
+            #     attws_list[idx].append(att_w_list[idx])
+            # # str
+            # encatt_hs_pad = torch.stack(att_c_list, dim=1)
+            # encatt_hlens = [self.num_enc] * batch
+            # encatt_c, encatt_w = self.encatt(encatt_hs_pad, encatt_hlens, z_list[0], encatt_w)
+            encatt_c, encatt_w = self.encatt(hs_pad_list, hlens_list, z_list[0], encatt_w)
             ey = torch.cat((eys[:, i, :], encatt_c), dim=1)  # utt x (zdim + hdim)
             z_list[0], c_list[0] = self.decoder[0](ey, (z_list[0], c_list[0]))
             for l in six.moves.range(1, self.dlayers):
@@ -4038,8 +4062,10 @@ class Decoder_MulEnc(torch.nn.Module):
         # convert to numpy array with the shape (B, Lmax, Tmax)
         # attws_list = [att1_ws, att2_ws, attN_ws]; attN = [BxTmax, BxTmax, ...., BxTmax] (len(attN) = Lmax)
         # ==> [att1_ws, att2_ws, attN_ws]; attN = B x Lmax x Tmax (numpy)
-        attws_list = [torch.stack(attws_list[idx], dim=1).cpu().numpy() for idx in range(self.num_enc)]
-        encatt_ws = torch.stack(encatt_ws, dim=1).cpu().numpy()
+        # attws_list = [torch.stack(attws_list[idx], dim=1).cpu().numpy() for idx in range(self.num_enc)]
+        # encatt_ws = torch.stack(encatt_ws, dim=1).cpu().numpy()
+        encatt_ws = None # todo
+        attws_list = [None] * self.num_enc
         return [encatt_ws, attws_list, ylens]
 
 # ------------- Encoder Network ----------------------------------------------------------------------------------------
@@ -4409,3 +4435,289 @@ class VGG(torch.nn.Module):
         xs = pad_list(xs, 0.0)
 
         return xs, ilens
+
+
+
+class Enc2AttAdd(torch.nn.Module):
+    '''add attention with 2 encoder streams
+    :param int eprojs: # projection-units of encoder
+    :param int dunits: # units of decoder
+    :param int k : attention dimension
+    :param int num_enc: # of encoder stream
+    :param int l2_dropout: flag to apply level-2 dropout
+    :param int l2_weight: fix the first encoder with l2_weight, second one has 1-l2_weight. default: None, do adaptive l2_weight learning.
+    '''
+
+    # __init__ will define the architecture of the attention model
+    # chnage the l2Weight when recog
+    def __init__(self, eprojs, dunits, att_dim, num_enc=2):
+        super(Enc2AttAdd, self).__init__()
+
+        # level 1 attention: one attention mechanism for each stream
+        self.mlp_enc_att1 = torch.nn.Linear(eprojs, att_dim)
+        self.mlp_dec_att1 = torch.nn.Linear(dunits, att_dim, bias=False)
+        self.gvec_att1 = torch.nn.Linear(att_dim, 1)
+
+        self.mlp_enc_att2 = torch.nn.Linear(eprojs, att_dim)
+        self.mlp_dec_att2 = torch.nn.Linear(dunits, att_dim, bias=False)
+        self.gvec_att2 = torch.nn.Linear(att_dim, 1)
+
+        self.mlp_enc_att3 = torch.nn.Linear(eprojs, att_dim)
+        self.mlp_dec_att3 = torch.nn.Linear(dunits, att_dim, bias=False)
+        self.gvec_att3 = torch.nn.Linear(att_dim, 1)
+
+        self.dunits = dunits
+        self.eprojs = eprojs
+        self.att_dim = att_dim
+        self.num_enc = num_enc
+
+        self.h_length_att1 = None
+        self.h_length_att2 = None
+        self.h_length_att3 = None
+        self.enc_h_att1 = None
+        self.enc_h_att2 = None
+        self.enc_h_att3 = None
+        self.pre_compute_enc_h_att1 = None
+        self.pre_compute_enc_h_att2 = None
+        self.pre_compute_enc_h_att3 = None
+        self.mask_att1 =None
+        self.mask_att2 =None
+        self.mask_att3 =None
+
+        self.store_hs_att1=True
+        self.store_hs_att2=True
+        self.store_hs_att3=False
+
+
+    def reset(self):
+        '''reset states'''
+        self.h_length_att1 = None
+        self.h_length_att2 = None
+        self.h_length_att3 = None
+        self.enc_h_att1 = None
+        self.enc_h_att2 = None
+        self.enc_h_att3 = None
+        self.pre_compute_enc_h_att1 = None
+        self.pre_compute_enc_h_att2 = None
+        self.pre_compute_enc_h_att3 = None
+        self.mask_att1 =None
+        self.mask_att2 =None
+        self.mask_att3 =None
+
+    def forward(self, enc_hs_pad, enc_hs_len, dec_z, att_prev, scaling=2.0):
+        '''AttLoc forward
+        :param Variable enc_hs_pad: list of padded encoder hidden state (list(B x T_max x D_enc))
+        :param list enc_h_len: list of padded encoder hidden state lenght list((B))
+        :param Variable dec_z: docoder hidden state (B x D_dec)
+        :param Variable att_prev: list of previous attetion weight list(B x T_max)
+        :param float scaling: scaling parameter before applying softmax
+        :return: attentioin weighted encoder state (B, D_enc)
+        :rtype: Variable
+        :return: list of previous attentioin weights [list(B x T_max), B x T_max] --> l1 and l2
+        :rtype: Variable
+        '''
+
+        batch = len(enc_hs_pad[0])
+
+        if dec_z is None:
+            dec_z = enc_hs_pad[0].new_zeros(batch, self.dunits)
+        else:
+            dec_z = dec_z.view(batch, self.dunits)
+
+        # att1
+        if self.pre_compute_enc_h_att1 is None or not self.store_hs_att1:
+            self.enc_h_att1 = enc_hs_pad[0]  # utt x frame x hdim
+            self.h_length_att1 = self.enc_h_att1.size(1)
+            self.pre_compute_enc_h_att1 = self.mlp_enc_att1(self.enc_h_att1)
+        dec_z_tiled_att1 = self.mlp_dec_att1(dec_z).view(batch, 1, self.att_dim)
+        e_att1 = self.gvec_att1(torch.tanh(self.pre_compute_enc_h_att1 + dec_z_tiled_att1)).squeeze(2)
+        if self.mask_att1 is None:
+            self.mask_att1 = to_cuda(self, make_pad_mask(enc_hs_len[0]))
+        e_att1.masked_fill_(self.mask_att1, -float('inf'))
+        w_att1 = F.softmax(scaling * e_att1, dim=1)
+        c_att1 = torch.matmul(w_att1.unsqueeze(1), self.enc_h_att1).squeeze(1)
+
+        # att2
+        if self.pre_compute_enc_h_att2 is None or not self.store_hs_att2:
+            self.enc_h_att2 = enc_hs_pad[1]  # utt x frame x hdim
+            self.h_length_att2 = self.enc_h_att2.size(1)
+            self.pre_compute_enc_h_att2 = self.mlp_enc_att2(self.enc_h_att2)
+        dec_z_tiled_att2 = self.mlp_dec_att2(dec_z).view(batch, 1, self.att_dim)
+        e_att2 = self.gvec_att2(torch.tanh(self.pre_compute_enc_h_att2 + dec_z_tiled_att2)).squeeze(2)
+        if self.mask_att2 is None:
+            self.mask_att2 = to_cuda(self, make_pad_mask(enc_hs_len[1]))
+        e_att2.masked_fill_(self.mask_att2, -float('inf'))
+        w_att2 = F.softmax(scaling * e_att2, dim=1)
+        c_att2 = torch.matmul(w_att2.unsqueeze(1), self.enc_h_att2).squeeze(1)
+
+
+        # connection
+        att_c_list = [c_att1, c_att2]
+        enc_hs_pad_att3 = torch.stack(att_c_list, dim=1)
+        enc_hs_len_att3 = [2] * batch
+
+        # att3
+        if self.pre_compute_enc_h_att3 is None or not self.store_hs_att3:
+            self.enc_h_att3 = enc_hs_pad_att3  # utt x frame x hdim
+            self.h_length_att3 = self.enc_h_att3.size(1)
+            self.pre_compute_enc_h_att3 = self.mlp_enc_att3(self.enc_h_att3)
+        dec_z_tiled_att3 = self.mlp_dec_att3(dec_z).view(batch, 1, self.att_dim)
+        e_att3 = self.gvec_att3(torch.tanh(self.pre_compute_enc_h_att3 + dec_z_tiled_att3)).squeeze(2)
+        if self.mask_att3 is None:
+            self.mask_att3 = to_cuda(self, make_pad_mask(enc_hs_len_att3))
+        e_att3.masked_fill_(self.mask_att3, -float('inf'))
+        w_att3 = F.softmax(scaling * e_att3, dim=1)
+        c_att3 = torch.matmul(w_att3.unsqueeze(1), self.enc_h_att3).squeeze(1)
+
+        return c_att3, [[w_att1, w_att2], w_att3]
+
+
+
+class Enc2AttAdd1(torch.nn.Module):
+    '''add attention with 2 encoder streams
+    :param int eprojs: # projection-units of encoder
+    :param int dunits: # units of decoder
+    :param int k : attention dimension
+    :param int num_enc: # of encoder stream
+    :param int l2_dropout: flag to apply level-2 dropout
+    :param int l2_weight: fix the first encoder with l2_weight, second one has 1-l2_weight. default: None, do adaptive l2_weight learning.
+    '''
+
+    # __init__ will define the architecture of the attention model
+    # chnage the l2Weight when recog
+    def __init__(self, eprojs, dunits, att_dim, num_enc=2, l2_dropout=None, l2_weight=None):
+        super(Enc2AttAdd1, self).__init__()
+
+        # level 1 attention: one attention mechanism for each stream
+
+        for idx in range(num_enc):
+            setattr(self, "mlp_enc%d_l1" % idx, torch.nn.Linear(eprojs, att_dim))
+            setattr(self, "mlp_dec%d_l1" % idx, torch.nn.Linear(dunits, att_dim, bias=False))
+            setattr(self, "gvec%d_l1" % idx, torch.nn.Linear(att_dim, 1))
+
+        if l2_weight is None:  # fixed l2 weight
+            # level 2 attention: one attention mechanism for stream selection
+            self.mlp_enc_l2 = torch.nn.Linear(eprojs, att_dim)
+            self.mlp_dec_l2 = torch.nn.Linear(dunits, att_dim, bias=False)
+            self.gvec_l2 = torch.nn.Linear(att_dim, 1)
+
+        if l2_dropout is not None:
+            self.dropout_l2 = torch.nn.Dropout2d(p=l2_dropout)
+
+        self.dunits = dunits
+        self.eprojs = eprojs
+        self.att_dim = att_dim
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+        self.num_enc = num_enc
+        self.l2_weight = l2_weight
+        self.l2_dropout = l2_dropout
+        self.l2_mask = None
+        self.mask = None
+
+    def reset(self):
+        '''reset states'''
+        self.h_length_l1 = None
+        self.h_length_l2 = None
+        self.enc_h_l1 = None
+        self.enc_h_l2 = None
+        self.pre_compute_enc_h_l1 = None
+        self.pre_compute_enc_h_l2 = None
+        self.l2_mask =None
+        self.mask = None
+
+    def forward(self, enc_hs_pad, enc_hs_len, dec_z, att_prev, scaling=2.0):
+        '''AttLoc forward
+        :param Variable enc_hs_pad: list of padded encoder hidden state (list(B x T_max x D_enc))
+        :param list enc_h_len: list of padded encoder hidden state lenght list((B))
+        :param Variable dec_z: docoder hidden state (B x D_dec)
+        :param Variable att_prev: list of previous attetion weight list(B x T_max)
+        :param float scaling: scaling parameter before applying softmax
+        :return: attentioin weighted encoder state (B, D_enc)
+        :rtype: Variable
+        :return: list of previous attentioin weights [list(B x T_max), B x T_max] --> l1 and l2
+        :rtype: Variable
+        '''
+
+        # level 1 attention
+        batch = len(enc_hs_pad[0])
+        # pre-compute all h outside the decoder loop
+
+        if self.pre_compute_enc_h_l1 is None:
+            self.enc_h_l1 = enc_hs_pad  # list (utt x frame x hdim)
+            self.h_length_l1 = [self.enc_h_l1[idx].size(1) for idx in range(self.num_enc)]
+            # utt x frame x att_dim
+            self.pre_compute_enc_h_l1 = [getattr(self, "mlp_enc%d_l1" % idx)(self.enc_h_l1[idx]) for idx in
+                                         range(self.num_enc)]
+
+        if dec_z is None:
+            dec_z = enc_hs_pad.new_zeros(batch, self.dunits)
+        else:
+            dec_z = dec_z.view(batch, self.dunits)
+
+        # dec_z_tiled: utt x frame x att_dim
+        dec_z_tiled_l1 = [getattr(self, "mlp_dec%d_l1" % idx)(dec_z).view(batch, 1, self.att_dim) for idx in
+                          range(self.num_enc)]
+
+        # dot with gvec
+        # list(utt x frame x att_dim) -> list(utt x frame)
+        # NOTE consider zero padding when compute w.
+        e_l1 = [getattr(self, "gvec%d_l1" % idx)(torch.tanh(
+            self.pre_compute_enc_h_l1[idx] + dec_z_tiled_l1[idx])).squeeze(2) for idx in range(self.num_enc)]
+
+        # NOTE consider zero padding when compute w.
+        if self.mask is None:
+            self.mask = [to_cuda(self, make_pad_mask(enc_hs_len[idx]))  for idx in range(self.num_enc)]
+        e_l1 = [e_l1[idx].masked_fill_(self.mask[idx], -float('inf')) for idx in range(self.num_enc)]
+
+
+        w_l1 = [F.softmax(scaling * e_l1[idx], dim=1) for idx in range(self.num_enc)]
+
+        # weighted sum over flames
+        # list (utt x hdim)
+        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        # self.enc_h_l2 = [torch.sum(self.enc_h_l1[idx] * w_l1[idx].view(batch, self.h_length_l1[idx], 1), dim=1) for idx in
+        #                  range(self.num_enc)]
+        self.enc_h_l2 = [torch.matmul(w_l1[idx].unsqueeze(1), self.enc_h_l1[idx]).squeeze(1) for idx in
+                         range(self.num_enc)]
+        self.enc_h_l2 = torch.stack(self.enc_h_l2, dim=1)  # utt x numEncStream x hdim
+
+        if self.l2_dropout is not None:  # TODO: (0,0) situation
+            self.enc_h_l2 = self.dropout_l2(self.enc_h_l2.unsqueeze(3)).squeeze(3)
+
+        # level 2 attention
+        if self.l2_weight is None:
+            self.h_length_l2 = self.num_enc
+            self.pre_compute_enc_h_l2 = self.mlp_enc_l2(self.enc_h_l2)
+
+            # dec_z_tiled: utt x frame x att_dim
+            dec_z_tiled_l2 = self.mlp_dec_l2(dec_z).view(batch, 1, self.att_dim)
+
+            # dot with gvec
+            # utt x frame x att_dim -> utt x frame
+            # NOTE consider zero padding when compute w.
+            e_l2 = self.gvec_l2(torch.tanh(
+                self.pre_compute_enc_h_l2 + dec_z_tiled_l2)).squeeze(2)
+
+            # NOTE consider zero padding when compute w.
+            if self.l2_mask is None:
+                self.l2_mask = to_cuda(self, make_pad_mask([self.num_enc]))
+            e_l2.masked_fill_(self.l2_mask, -float('inf'))
+
+            w_l2 = F.softmax(scaling * e_l2, dim=1) # TODO What if no scaling????
+        else:  # fixed l2 weight
+            w_l2 = att_prev[1]
+
+        # weighted sum over flames
+        # utt x hdim
+        # NOTE equivalent to c = torch.sum(self.enc_h * w.view(batch, self.h_length, 1), dim=1)
+        # c_l2 = torch.sum(self.enc_h_l2 * w_l2.view(batch, self.h_length_l2, 1), dim=1)
+        c_l2 = torch.matmul(w_l2.unsqueeze(1), self.enc_h_l2).squeeze(1)
+        # logging.info(self.__class__.__name__ + ' level two attention weight: ')
+        # logging.warning(w_l2[0][0])  # print the l2-weight for the first stream
+
+        return c_l2, [w_l1, w_l2]

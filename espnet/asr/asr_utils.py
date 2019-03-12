@@ -98,6 +98,9 @@ def load_inputs_and_targets(batch):
     xs = [kaldi_io_py.read_mat(b[1]['input'][0]['feat']) for b in batch]
     ys = [b[1]['output'][0]['tokenid'].split() for b in batch]
 
+    batches = [b[0] for b in batch]
+    logging.warning(batches)
+
     # get index of non-zero length samples
     nonzero_idx = filter(lambda i: len(ys[i]) > 0, range(len(xs)))
     # sort in input lengths
@@ -277,31 +280,31 @@ class PlotAttentionReportMulEnc(extension.Extension):
         # att_ws_list: [B x Lmax x TmaxN] N is for Nth attention
         # hlens_list: [[B]xN]
 
-        # plot encoder attention encatt: B x Lmax x Tmax (numpy)
-        for idx, encatt_w in enumerate(encatt_ws):
-            filename = "%s/%s.ep.{.updater.epoch}.encatt.png" % (
-                self.outdir, self.data[idx][0])
-            np_filename = "%s/%s.ep.{.updater.epoch}.encatt.npy" % (
-                self.outdir, self.data[idx][0])
-            dec_len = ylens[idx]
-            enc_len = num_enc
-            encatt_w = encatt_w[:dec_len, :enc_len]
-            np.save(np_filename.format(trainer), encatt_w)
-            self._plot_and_save_attention(encatt_w, filename.format(trainer))
-            self._plot_and_save_encattention(encatt_w, filename.format(trainer))
-
-        # plot each attention: B x Lmax x Tmax (numpy)
-        for att_idx, att_ws in enumerate(att_ws_list):
-            for idx, att_w in enumerate(att_ws):
-                filename = "%s/%s.ep.{.updater.epoch}.att%d.png" % (
-                    self.outdir, self.data[idx][0], att_idx)
-                np_filename = "%s/%s.ep.{.updater.epoch}.att%d.npy" % (
-                    self.outdir, self.data[idx][0], att_idx)
-                dec_len = ylens[idx]
-                enc_len = hlens_list[att_idx][idx]
-                att_w = att_w[:dec_len, :enc_len]
-                np.save(np_filename.format(trainer), att_w)
-                self._plot_and_save_attention(att_w, filename.format(trainer))
+        # # plot encoder attention encatt: B x Lmax x Tmax (numpy)
+        # for idx, encatt_w in enumerate(encatt_ws):
+        #     filename = "%s/%s.ep.{.updater.epoch}.encatt.png" % (
+        #         self.outdir, self.data[idx][0])
+        #     np_filename = "%s/%s.ep.{.updater.epoch}.encatt.npy" % (
+        #         self.outdir, self.data[idx][0])
+        #     dec_len = ylens[idx]
+        #     enc_len = num_enc
+        #     encatt_w = encatt_w[:dec_len, :enc_len]
+        #     np.save(np_filename.format(trainer), encatt_w)
+        #     self._plot_and_save_attention(encatt_w, filename.format(trainer))
+        #     self._plot_and_save_encattention(encatt_w, filename.format(trainer))
+        #
+        # # plot each attention: B x Lmax x Tmax (numpy)
+        # for att_idx, att_ws in enumerate(att_ws_list):
+        #     for idx, att_w in enumerate(att_ws):
+        #         filename = "%s/%s.ep.{.updater.epoch}.att%d.png" % (
+        #             self.outdir, self.data[idx][0], att_idx)
+        #         np_filename = "%s/%s.ep.{.updater.epoch}.att%d.npy" % (
+        #             self.outdir, self.data[idx][0], att_idx)
+        #         dec_len = ylens[idx]
+        #         enc_len = hlens_list[att_idx][idx]
+        #         att_w = att_w[:dec_len, :enc_len]
+        #         np.save(np_filename.format(trainer), att_w)
+        #         self._plot_and_save_attention(att_w, filename.format(trainer))
 
     def _plot_and_save_attention(self, att_w, filename):
         # dynamically import matplotlib due to not found error

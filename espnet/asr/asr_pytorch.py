@@ -1180,10 +1180,13 @@ def train_mulenc(args):
         train_iter = chainer.iterators.MultiprocessIterator(
             TransformDataset(train, converter.transform),
             batch_size=1, n_processes=args.n_iter_processes, n_prefetch=8, maxtasksperchild=20)
-        valid_iter = chainer.iterators.MultiprocessIterator(
+        valid_iter = chainer.iterators.SerialIterator(
             TransformDataset(valid, converter.transform),
-            batch_size=1, repeat=False, shuffle=False,
-            n_processes=args.n_iter_processes, n_prefetch=8, maxtasksperchild=20)
+            batch_size=1, repeat=False, shuffle=False)
+        # valid_iter = chainer.iterators.MultiprocessIterator(
+        #     TransformDataset(valid, converter.transform),
+        #     batch_size=1, repeat=False, shuffle=False,
+        #     n_processes=args.n_iter_processes, n_prefetch=8, maxtasksperchild=20)
     else:
         train_iter = chainer.iterators.SerialIterator(
             TransformDataset(train, converter.transform),
