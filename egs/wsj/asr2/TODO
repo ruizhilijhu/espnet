@@ -1,10 +1,8 @@
-TO replicate my MEMR result,
-
-
+TO replicate MEMR result,
 
 Install
-1. chainer using 4.1.0
+1. chainer using 4.3.1
 2. old kaldi-io
-3. multi-processor 1
-4. add  sum -> malmat
-4.  add view outside of the attnention loop
+3. multi-processor 1 (done in script)
+4. add  sum -> malmat (done in script)
+4. add view outside of the attnention loop (done in script)

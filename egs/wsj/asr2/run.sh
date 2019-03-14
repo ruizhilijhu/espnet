@@ -95,8 +95,6 @@ train_test=test_eval92
 recog_set="test_dev93 test_eval92"
 recog_set="test_eval92"
 
-# set up dump
-#dumpdir=${dumpdir}/${train_set}
 
 # basename of conf_file
 conf_id=$(basename $conf_file .json)

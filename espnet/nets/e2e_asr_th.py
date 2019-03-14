@@ -4059,10 +4059,9 @@ class Decoder_MulEnc(torch.nn.Module):
         # convert to numpy array with the shape (B, Lmax, Tmax)
         # attws_list = [att1_ws, att2_ws, attN_ws]; attN = [BxTmax, BxTmax, ...., BxTmax] (len(attN) = Lmax)
         # ==> [att1_ws, att2_ws, attN_ws]; attN = B x Lmax x Tmax (numpy)
-        # attws_list = [torch.stack(attws_list[idx], dim=1).cpu().numpy() for idx in range(self.num_enc)]
-        # encatt_ws = torch.stack(encatt_ws, dim=1).cpu().numpy()
-        encatt_ws = None # todo
-        attws_list = [None] * self.num_enc
+        attws_list = [torch.stack(attws_list[idx], dim=1).cpu().numpy() for idx in range(self.num_enc)]
+        encatt_ws = torch.stack(encatt_ws, dim=1).cpu().numpy()
+
         return [encatt_ws, attws_list, ylens]
 
 # ------------- Encoder Network ----------------------------------------------------------------------------------------
